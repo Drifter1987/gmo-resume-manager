@@ -65,24 +65,91 @@ export function fromBase64(value: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+export type SaveResult = 'downloaded' | 'shared' | 'opened' | 'cancelled';
+
+interface WritableFile {
+  write(data: Blob): Promise<void>;
+  close(): Promise<void>;
+}
+
+interface FilePickerHandle {
+  createWritable(): Promise<WritableFile>;
+}
+
 /**
- * Hand a file to the browser without replacing the app.
- * `download` is honoured on desktop; where it is ignored (iOS), the file opens in a
- * new tab instead of navigating away from the editor.
+ * Get a file out of the app without ever replacing the page.
+ * 1. File System Access API (desktop Chrome/Edge): real save dialog.
+ * 2. Web Share API with files (iOS/Android): share sheet, "Save to Files".
+ * 3. A download link clicked inside a hidden frame: honoured by desktop browsers,
+ *    and harmless where it is not, because only the frame navigates.
  */
-export function saveBlob(blob: Blob, filename: string): string {
+export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult> {
+  const dot = filename.lastIndexOf('.');
+  const extension = dot === -1 ? '.txt' : filename.slice(dot);
+  const type = blob.type || 'application/octet-stream';
+  const file = new File([blob], filename, { type });
+
+  const picker = (window as unknown as { showSaveFilePicker?: (options: unknown) => Promise<FilePickerHandle> })
+    .showSaveFilePicker;
+
+  if (typeof picker === 'function') {
+    try {
+      const handle = await picker({
+        suggestedName: filename,
+        types: [{ description: 'Export', accept: { [type]: [extension] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return 'downloaded';
+    } catch (error) {
+      if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
+    }
+  }
+
+  const nav = navigator as Navigator & {
+    canShare?: (data?: { files?: File[] }) => boolean;
+    share?: (data: { files?: File[]; title?: string }) => Promise<void>;
+  };
+
+  if (nav.canShare && nav.share) {
+    let canShareFiles = false;
+    try {
+      canShareFiles = nav.canShare({ files: [file] });
+    } catch (error) {
+      canShareFiles = false;
+    }
+
+    if (canShareFiles) {
+      try {
+        await nav.share({ files: [file], title: filename });
+        return 'shared';
+      } catch (error) {
+        if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
+      }
+    }
+  }
+
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+  const frame = document.createElement('iframe');
+  frame.style.display = 'none';
+  frame.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(frame);
+
+  const doc = frame.contentDocument;
+  const link = (doc || document).createElement('a');
   link.href = url;
   link.download = filename;
-  link.target = '_blank';
-  link.rel = 'noopener';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
 
-  const ua = navigator.userAgent || '';
-  const iOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
-  setTimeout(() => URL.revokeObjectURL(url), 120000);
-  return iOS ? 'opened' : 'downloaded';
+  if (doc && doc.body) doc.body.appendChild(link);
+  else document.body.appendChild(link);
+
+  link.click();
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    if (frame.parentNode) frame.parentNode.removeChild(frame);
+  }, 60000);
+
+  return 'opened';
 }

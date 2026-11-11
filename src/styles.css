@@ -702,7 +702,7 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--paper-ink);
   font-size: 13.5px;
   line-height: 1.5;
-  scroll-margin-top: 120px;
+  scroll-margin-top: 170px;
 }
 
 .r-header { margin-bottom: 18px; }

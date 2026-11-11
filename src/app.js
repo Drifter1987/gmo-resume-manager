@@ -897,7 +897,7 @@ const EXPORT_FORMATS = {
   json: { label: 'JSON', ext: 'json' }
 };
 
-function exportFile(kind) {
+async function exportFile(kind) {
   const meta = EXPORT_FORMATS[kind];
   if (!meta) return;
   const base = fileNameBase(state);
@@ -911,12 +911,11 @@ function exportFile(kind) {
     else if (kind === 'txt') blob = new Blob([toPlainText(state)], { type: 'text/plain;charset=utf-8' });
     else blob = new Blob([toJson(state)], { type: 'application/json' });
 
-    const result = saveBlob(blob, name);
-    toast(
-      result === 'opened'
-        ? meta.label + ' opened in a new tab — use Share to save it to Files'
-        : meta.label + ' downloaded'
-    );
+    const result = await saveBlob(blob, name);
+
+    if (result === 'downloaded') toast(meta.label + ' saved');
+    else if (result === 'shared') toast(meta.label + ' shared');
+    else if (result === 'opened') toast(meta.label + ' ready — check your downloads');
   } catch (error) {
     console.error(error);
     toast(
@@ -1047,14 +1046,10 @@ function goTo(id) {
   renderEditor();
   renderPreview();
 
-  if (editor) {
-    const y = ui.scrolls[id] || 0;
-    requestAnimationFrame(() => {
-      editor.scrollTop = y;
-    });
-  }
-
-  if (changed && window.scrollY > 40) window.scrollTo({ top: 0, behavior: 'smooth' });
+  requestAnimationFrame(() => {
+    if (editor) editor.scrollTop = ui.scrolls[id] || 0;
+    if (changed) window.scrollTo(0, 0);
+  });
 }
 
 function storageUsage() {
