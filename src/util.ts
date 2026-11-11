@@ -115,12 +115,21 @@ export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult
   const ua = navigator.userAgent || '';
   const isIos = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
 
-  if (nav.share && isIos) {
+  if (nav.share && nav.canShare && isIos) {
+    let shareable = false;
     try {
-      await nav.share({ files: [file], title: filename });
-      return 'shared';
+      shareable = nav.canShare({ files: [file] });
     } catch (error) {
-      if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
+      shareable = false;
+    }
+
+    if (shareable) {
+      try {
+        await nav.share({ files: [file], title: filename });
+        return 'shared';
+      } catch (error) {
+        if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
+      }
     }
   }
 

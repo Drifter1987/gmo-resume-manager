@@ -34,6 +34,11 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 | MD | Markdown resume plus a hidden data block | yes |
 | JSON | Full backup: data, order and settings | yes |
 
+Saving a file: the app uses the browser's save dialog where it exists, the share sheet
+("Save to Files") where it does not, and otherwise opens an in-app sheet with the finished
+file, a preview for PDFs and an explicit Open/Save link — so an export is never a dead end.
+Markdown, TXT and JSON can also be copied straight to the clipboard.
+
 JSON carries the state as-is. Markdown and TXT carry the same snapshot base64-encoded in a
 comment (HTML comment in Markdown, a marked block at the end of the TXT). Importing any of
 the three rebuilds the identical preview — same order, same sections, same settings — on
