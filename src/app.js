@@ -9,7 +9,7 @@ import { buildPdf } from './pdf';
 import { fileNameBase, toJson, toMarkdown, toPlainText } from './format';
 import { parseImport } from './parse';
 import { APP_VERSION, BUILD_NUMBER } from './version';
-import { downloadBlob } from './util';
+import { saveBlob } from './util';
 
 const STORAGE_KEY = 'gmoResumeManager.v2';
 const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
@@ -679,12 +679,16 @@ function settingsEditor() {
 
     <section class="setting-block">
       <h3 class="setting-title">Data</h3>
-      <div class="switch-row">
-        <span>Storage<small>${esc(storageUsage())}</small></span>
+      <div class="data-row">
+        <span>Storage used</span>
+        <span class="mono">${esc(storageUsage())}</span>
+      </div>
+      <div class="data-row">
+        <span>Version</span>
         <span class="mono">${esc(APP_VERSION)}</span>
       </div>
-      <div class="switch-row">
-        <span>Build<small>Stamped when the app was built.</small></span>
+      <div class="data-row">
+        <span>Build</span>
         <span class="mono">${esc(BUILD_NUMBER)}</span>
       </div>
       <div class="danger-zone">
@@ -717,6 +721,13 @@ function renderTabs() {
       section.id === ui.section
     }" data-tab="${section.id}">${esc(section.label)}</button>`;
   }).join('');
+
+  const active = tabs.querySelector('.tab.is-active');
+  if (active) {
+    requestAnimationFrame(() => {
+      active.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+  }
 }
 
 function renderEditor() {
@@ -893,18 +904,19 @@ function exportFile(kind) {
   const name = base + '.' + meta.ext;
 
   try {
-    if (kind === 'pdf') {
-      downloadBlob(buildPdf(state), name);
-    } else if (kind === 'docx') {
-      downloadBlob(buildDocx(state), name);
-    } else if (kind === 'md') {
-      downloadBlob(new Blob([toMarkdown(state)], { type: 'text/markdown;charset=utf-8' }), name);
-    } else if (kind === 'txt') {
-      downloadBlob(new Blob([toPlainText(state)], { type: 'text/plain;charset=utf-8' }), name);
-    } else {
-      downloadBlob(new Blob([toJson(state)], { type: 'application/json' }), name);
-    }
-    toast(meta.label + ' downloaded');
+    let blob;
+    if (kind === 'pdf') blob = buildPdf(state);
+    else if (kind === 'docx') blob = buildDocx(state);
+    else if (kind === 'md') blob = new Blob([toMarkdown(state)], { type: 'text/markdown;charset=utf-8' });
+    else if (kind === 'txt') blob = new Blob([toPlainText(state)], { type: 'text/plain;charset=utf-8' });
+    else blob = new Blob([toJson(state)], { type: 'application/json' });
+
+    const result = saveBlob(blob, name);
+    toast(
+      result === 'opened'
+        ? meta.label + ' opened in a new tab — use Share to save it to Files'
+        : meta.label + ' downloaded'
+    );
   } catch (error) {
     console.error(error);
     toast(
@@ -1025,6 +1037,7 @@ function applySetting(key, value) {
 function goTo(id) {
   if (!SECTIONS.some((section) => section.id === id)) return;
 
+  const changed = ui.section !== id;
   const editor = document.getElementById('editor');
   if (editor) ui.scrolls[ui.section] = editor.scrollTop;
 
@@ -1040,15 +1053,17 @@ function goTo(id) {
       editor.scrollTop = y;
     });
   }
+
+  if (changed && window.scrollY > 40) window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function storageUsage() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY) || '';
     const kb = Math.max(1, Math.round(raw.length / 1024));
-    return 'About ' + kb + ' KB on this device';
+    return 'about ' + kb + ' KB';
   } catch (error) {
-    return 'Storage is unavailable in this browser';
+    return 'unavailable';
   }
 }
 
@@ -1143,7 +1158,10 @@ function onDockClick(event) {
   else if (action === 'example') loadExample();
   else if (action === 'export') goTo('export');
   else if (action === 'settings') goTo('settings');
-  else if (action === 'pdf') exportFile('pdf');
+  else if (action === 'preview') {
+    const resume = document.getElementById('resume');
+    if (resume) resume.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else if (action === 'pdf') exportFile('pdf');
 }
 
 function bindEvents() {
@@ -1186,7 +1204,7 @@ function bindEvents() {
   });
 
   document.getElementById('dock').addEventListener('click', onDockClick);
-  document.getElementById('btn-pdf').addEventListener('click', () => exportFile('pdf'));
+  document.getElementById('btn-export-quick').addEventListener('click', () => goTo('export'));
   document.getElementById('btn-print').addEventListener('click', () => window.print());
 
   const fileInput = document.getElementById('file-input');
@@ -1199,7 +1217,6 @@ function bindEvents() {
   window.addEventListener(
     'scroll',
     () => {
-      ui.pageY = window.scrollY;
       scheduleUiSave();
     },
     { passive: true }
@@ -1245,7 +1262,7 @@ function init() {
   setStatus('Saved on this device');
 
   requestAnimationFrame(() => {
-    window.scrollTo(0, ui.pageY || 0);
+    window.scrollTo(0, 0);
     const editor = document.getElementById('editor');
     if (editor) editor.scrollTop = ui.scrolls[ui.section] || 0;
   });

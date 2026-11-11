@@ -89,8 +89,8 @@ export function changelogEditor(): string {
     return `<div class="cl-group">
       <div class="cl-head">
         <span class="cl-version">v${release.version}</span>
-        <span class="cl-kind">${release.name}</span>
         ${isCurrent ? '<span class="rel-badge">Current</span>' : ''}
+        <span class="cl-kind">${release.name}</span>
       </div>
       <ul class="cl-items">${release.notes.map((note) => `<li>${note}</li>`).join('')}</ul>
     </div>`;

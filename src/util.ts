@@ -65,13 +65,24 @@ export function fromBase64(value: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
+/**
+ * Hand a file to the browser without replacing the app.
+ * `download` is honoured on desktop; where it is ignored (iOS), the file opens in a
+ * new tab instead of navigating away from the editor.
+ */
+export function saveBlob(blob: Blob, filename: string): string {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  link.target = '_blank';
+  link.rel = 'noopener';
   document.body.appendChild(link);
   link.click();
   link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+  const ua = navigator.userAgent || '';
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+  return iOS ? 'opened' : 'downloaded';
 }

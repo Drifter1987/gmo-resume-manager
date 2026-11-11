@@ -125,7 +125,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 20px 8px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 20px 8px;
   background: rgba(9, 22, 17, 0.86);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
@@ -219,6 +219,13 @@ body {
 }
 
 .tabs::-webkit-scrollbar { display: none; }
+
+@media (max-width: 720px) {
+  .tabs {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 26px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 26px), transparent 100%);
+  }
+}
 
 .tab {
   appearance: none;
@@ -638,6 +645,19 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .setting-note { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); }
 
+.data-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.data-row:last-of-type { border-bottom: 0; }
+.data-row > span:first-child { color: var(--ink); }
+
 .mono {
   font-family: var(--mono);
   font-size: 11px;
@@ -682,6 +702,7 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--paper-ink);
   font-size: 13.5px;
   line-height: 1.5;
+  scroll-margin-top: 120px;
 }
 
 .r-header { margin-bottom: 18px; }
@@ -860,10 +881,35 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 
 @media (max-width: 640px) {
+  :root { --dock-height: 86px; }
+
+  .dock {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    height: auto;
+    padding: 7px 10px calc(7px + env(safe-area-inset-bottom, 0px));
+  }
+
   .dock-status { display: none; }
-  .dock { justify-content: center; gap: 4px; padding: 0 10px; }
-  .dock-btn { padding: 7px 9px; font-size: 12px; }
-  .dock-build { display: none; }
+  .dock-actions { flex-wrap: wrap; justify-content: center; gap: 5px; }
+  .dock-btn { padding: 6px 9px; font-size: 11.5px; }
+  .dock-build {
+    display: inline;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: 10px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-bar { padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 6px; }
+  .brand-mark { width: 38px; height: 32px; font-size: 10.5px; }
+  .brand h1 { font-size: 14px; white-space: nowrap; }
+  .brand-sub { display: none; }
 }
 
 /* ---------- toast ---------- */
@@ -908,7 +954,6 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
   .form-grid { grid-template-columns: 1fr; }
   .r-skill { grid-template-columns: 1fr; gap: 1px; }
   .app { padding: 14px 12px 24px; }
-  .app-bar { padding: 8px 12px 6px; }
   .bar-status-label { display: none; }
   .format-card { grid-template-columns: 38px minmax(0, 1fr); }
   .format-card .btn { grid-column: 1 / -1; width: 100%; }
