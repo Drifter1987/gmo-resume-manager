@@ -112,23 +112,21 @@ export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult
     share?: (data: { files?: File[]; title?: string }) => Promise<void>;
   };
 
-  if (nav.canShare && nav.share) {
-    let canShareFiles = false;
-    try {
-      canShareFiles = nav.canShare({ files: [file] });
-    } catch (error) {
-      canShareFiles = false;
-    }
+  const ua = navigator.userAgent || '';
+  const isIos = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
 
-    if (canShareFiles) {
-      try {
-        await nav.share({ files: [file], title: filename });
-        return 'shared';
-      } catch (error) {
-        if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
-      }
+  if (nav.share && isIos) {
+    try {
+      await nav.share({ files: [file], title: filename });
+      return 'shared';
+    } catch (error) {
+      if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
     }
   }
+
+  // iOS ignores `download` on blob links, so hand back to the caller, which shows
+  // an in-app sheet with the file preview and an explicit Open/Save link.
+  if (isIos) return 'opened';
 
   const url = URL.createObjectURL(blob);
   const frame = document.createElement('iframe');
@@ -137,13 +135,15 @@ export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult
   document.body.appendChild(frame);
 
   const doc = frame.contentDocument;
-  const link = (doc || document).createElement('a');
+  if (!doc || !doc.body) {
+    frame.remove();
+    return 'opened';
+  }
+
+  const link = doc.createElement('a');
   link.href = url;
   link.download = filename;
-
-  if (doc && doc.body) doc.body.appendChild(link);
-  else document.body.appendChild(link);
-
+  doc.body.appendChild(link);
   link.click();
 
   setTimeout(() => {
@@ -151,5 +151,5 @@ export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult
     if (frame.parentNode) frame.parentNode.removeChild(frame);
   }, 60000);
 
-  return 'opened';
+  return 'downloaded';
 }

@@ -553,6 +553,7 @@ function skillsEditor() {
 }
 
 function formatCard(kind, ext, title, description, primary) {
+  const copyable = kind === 'md' || kind === 'txt' || kind === 'json';
   return `
     <div class="format-card${primary ? ' is-primary' : ''}">
       <span class="format-icon">${esc(ext)}</span>
@@ -560,9 +561,101 @@ function formatCard(kind, ext, title, description, primary) {
         <p class="format-name">${esc(title)}</p>
         <p class="format-desc">${esc(description)}</p>
       </div>
-      <button class="btn${primary ? ' btn-primary' : ''}" type="button" data-export="${kind}">Download</button>
+      <div class="format-actions">
+        ${copyable ? `<button class="btn" type="button" data-copy="${kind}">Copy</button>` : ''}
+        <button class="btn${primary ? ' btn-primary' : ''}" type="button" data-export="${kind}">Download</button>
+      </div>
     </div>
   `;
+}
+
+function exportText(kind) {
+  if (kind === 'md') return toMarkdown(state);
+  if (kind === 'txt') return toPlainText(state);
+  return toJson(state);
+}
+
+/**
+ * The app's own web view cannot save files. Show the finished file in a sheet with
+ * a visible Open/Save link and a copy action, so the export is never a dead end.
+ */
+function showExportSheet(blob, name, kind) {
+  const previous = document.getElementById('export-sheet');
+  if (previous) previous.remove();
+
+  const url = URL.createObjectURL(blob);
+  const size = Math.max(1, Math.round(blob.size / 1024));
+  const copyable = kind === 'md' || kind === 'txt' || kind === 'json';
+
+  const sheet = document.createElement('div');
+  sheet.id = 'export-sheet';
+  sheet.className = 'sheet';
+  sheet.innerHTML = `
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-label="${esc(kind.toUpperCase())} export">
+      <div class="sheet-head">
+        <div>
+          <p class="sheet-title">${esc(kind.toUpperCase())} ready</p>
+          <p class="sheet-file">${esc(name)} · ${size} KB</p>
+        </div>
+        <button class="icon-btn" type="button" data-sheet-close title="Close">✕</button>
+      </div>
+      ${
+        kind === 'pdf'
+          ? `<iframe class="sheet-frame" src="${url}" title="PDF preview"></iframe>`
+          : `<div class="sheet-blank">${esc(kind.toUpperCase())} file · ${size} KB</div>`
+      }
+      <div class="sheet-actions">
+        <a class="btn btn-primary" href="${url}" download="${esc(name)}">Open / Save file</a>
+        ${copyable ? `<button class="btn" type="button" data-copy="${kind}">Copy text</button>` : ''}
+        <button class="btn" type="button" data-sheet-close>Close</button>
+      </div>
+      <p class="fineprint">If the file opens instead of saving, use the browser's share button and choose
+      <strong>Save to Files</strong>.</p>
+    </div>
+  `;
+
+  document.body.appendChild(sheet);
+
+  sheet.addEventListener('click', (event) => {
+    if (event.target === sheet || event.target.closest('[data-sheet-close]')) {
+      sheet.remove();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    const copy = event.target.closest('[data-copy]');
+    if (copy) copyText(copy.dataset.copy);
+  });
+}
+
+function copyText(kind) {
+  const text = exportText(kind);
+  const done = () => toast(EXPORT_FORMATS[kind].label + ' copied to the clipboard');
+  const failed = () => toast('Could not copy — use Download instead', true);
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done, failed));
+  } else {
+    legacyCopy(text, done, failed);
+  }
+}
+
+function legacyCopy(text, done, failed) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', 'readonly');
+  area.style.position = 'fixed';
+  area.style.top = '-1000px';
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch (error) {
+    ok = false;
+  }
+  area.remove();
+  if (ok) done();
+  else failed();
 }
 
 function exportEditor() {
@@ -915,7 +1008,10 @@ async function exportFile(kind) {
 
     if (result === 'downloaded') toast(meta.label + ' saved');
     else if (result === 'shared') toast(meta.label + ' shared');
-    else if (result === 'opened') toast(meta.label + ' ready — check your downloads');
+    else if (result === 'opened') {
+      showExportSheet(blob, name, kind);
+      toast(meta.label + ' ready');
+    }
   } catch (error) {
     console.error(error);
     toast(
@@ -1126,6 +1222,12 @@ function onPanelInput(event) {
 }
 
 function onPanelClick(event) {
+  const copyButton = event.target.closest('[data-copy]');
+  if (copyButton) {
+    copyText(copyButton.dataset.copy);
+    return;
+  }
+
   const exportButton = event.target.closest('[data-export]');
   if (exportButton) {
     exportFile(exportButton.dataset.export);
