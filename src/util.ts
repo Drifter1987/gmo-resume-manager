@@ -65,7 +65,7 @@ export function fromBase64(value: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-export type SaveResult = 'downloaded' | 'shared' | 'opened' | 'cancelled';
+export type SaveResult = 'downloaded' | 'opened' | 'cancelled';
 
 interface WritableFile {
   write(data: Blob): Promise<void>;
@@ -77,17 +77,15 @@ interface FilePickerHandle {
 }
 
 /**
- * Get a file out of the app without ever replacing the page.
- * 1. File System Access API (desktop Chrome/Edge): real save dialog.
- * 2. Web Share API with files (iOS/Android): share sheet, "Save to Files".
- * 3. A download link clicked inside a hidden frame: honoured by desktop browsers,
- *    and harmless where it is not, because only the frame navigates.
+ * Get a file out of the app.
+ * Desktop browsers get a real save dialog (or a download link inside a hidden frame).
+ * iOS cannot download blob files, so the caller shows an in-app sheet with a preview
+ * and an explicit Open/Save link — predictable, and never replaces the page by itself.
  */
 export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult> {
   const dot = filename.lastIndexOf('.');
   const extension = dot === -1 ? '.txt' : filename.slice(dot);
   const type = blob.type || 'application/octet-stream';
-  const file = new File([blob], filename, { type });
 
   const picker = (window as unknown as { showSaveFilePicker?: (options: unknown) => Promise<FilePickerHandle> })
     .showSaveFilePicker;
@@ -107,34 +105,8 @@ export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult
     }
   }
 
-  const nav = navigator as Navigator & {
-    canShare?: (data?: { files?: File[] }) => boolean;
-    share?: (data: { files?: File[]; title?: string }) => Promise<void>;
-  };
-
   const ua = navigator.userAgent || '';
   const isIos = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
-
-  if (nav.share && nav.canShare && isIos) {
-    let shareable = false;
-    try {
-      shareable = nav.canShare({ files: [file] });
-    } catch (error) {
-      shareable = false;
-    }
-
-    if (shareable) {
-      try {
-        await nav.share({ files: [file], title: filename });
-        return 'shared';
-      } catch (error) {
-        if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
-      }
-    }
-  }
-
-  // iOS ignores `download` on blob links, so hand back to the caller, which shows
-  // an in-app sheet with the file preview and an explicit Open/Save link.
   if (isIos) return 'opened';
 
   const url = URL.createObjectURL(blob);

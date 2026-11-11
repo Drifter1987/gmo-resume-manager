@@ -1007,10 +1007,8 @@ async function exportFile(kind) {
     const result = await saveBlob(blob, name);
 
     if (result === 'downloaded') toast(meta.label + ' saved');
-    else if (result === 'shared') toast(meta.label + ' shared');
     else if (result === 'opened') {
       showExportSheet(blob, name, kind);
-      toast(meta.label + ' ready');
     }
   } catch (error) {
     console.error(error);
