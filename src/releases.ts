@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.1.1',
+    name: 'One-line title',
+    summary: 'The app title stays on one row, and Markdown import keeps multi-paragraph summaries.',
+    notes: [
+      'The “Résumé Manager” title no longer wraps onto two lines, at any width.',
+      'Markdown imports now keep every paragraph of a summary instead of only the first line.',
+      'Contact lines with a comma-separated location import the whole location, not just the first part.'
+    ]
+  },
+  {
     version: '2.1.0',
     name: 'Export for real',
     summary: 'Working PDF and DOCX exports, a separate Export tab, settings, and a docked toolbar.',

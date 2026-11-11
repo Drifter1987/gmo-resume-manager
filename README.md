@@ -46,9 +46,8 @@ another device. If the hidden block is stripped, a best-effort text parser takes
 
 ## Persistence
 
-Everything is written to `localStorage` as you type. The active tab, per-tab scroll
-position and page scroll are stored too, so switching sections or reloading never loses a
-field or your place.
+Everything is written to `localStorage` as you type. The active tab and its scroll position
+are stored too, so switching sections or reloading never loses a field or your place.
 
 ## Stack
 

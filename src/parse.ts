@@ -130,10 +130,10 @@ export function parseMarkdown(text: string): Draft {
     if (!section) {
       if (/^\*\*.+\*\*$/.test(line) && !state.profile.headline) {
         state.profile.headline = line.replace(/\*\*/g, '').trim();
-      } else if (line.indexOf('·') !== -1 || line.indexOf('@') !== -1) {
+      } else if (!state.profile.summary && (line.indexOf('·') !== -1 || line.indexOf('@') !== -1)) {
         assignContacts(state, line);
-      } else if (!state.profile.summary) {
-        state.profile.summary = line;
+      } else {
+        state.profile.summary = join(state.profile.summary, line);
       }
       return;
     }
@@ -350,7 +350,11 @@ function assignContacts(state: Draft, line: string): void {
       else if (!state.profile.website && /(^|\s)(www\.|https?:\/\/)|\.(dev|com|io|org|net)(\/|$)/i.test(part) && part.indexOf('@') === -1) {
         if (/linkedin/i.test(part)) state.profile.linkedin = part;
         else state.profile.website = part;
-      } else if (!state.profile.location) state.profile.location = part;
+      } else if (!state.profile.location) {
+        state.profile.location = part;
+      } else {
+        state.profile.location = state.profile.location + ', ' + part;
+      }
     });
 }
 
