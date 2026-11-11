@@ -1,6 +1,6 @@
 declare const __BUILD_NUMBER__: string;
 
-export const APP_VERSION = '2.0.0';
+export const APP_VERSION = '2.1.0';
 
 /**
  * Filled in at build time by vite.config.ts: a timestamp such as

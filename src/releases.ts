@@ -9,6 +9,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.1.0',
+    name: 'Export for real',
+    summary: 'Working PDF and DOCX exports, a separate Export tab, settings, and a docked toolbar.',
+    notes: [
+      'PDF export now builds a real PDF in the browser instead of relying on the print dialog, which did nothing in the app’s web view.',
+      'New DOCX and TXT exports alongside Markdown and JSON.',
+      'A separate Export tab collects every format and the importer, with drag and drop.',
+      'A Settings tab with theme, typeface, density, section visibility and data controls.',
+      'The section tabs now sit at the top of the app, with Settings on the far right.',
+      'A docked bottom toolbar holds the global actions and the build number.',
+      'The active tab, scroll positions and every field you typed persist across tab switches and reloads.',
+      'Markdown and TXT exports carry a hidden copy of the full data set, so any export rebuilds the identical preview on another device.'
+    ]
+  },
+  {
     version: '2.0.0',
     name: 'Dark by default',
     summary: 'A green-black theme with gold headings, a WebGL backdrop, and a home for every change.',

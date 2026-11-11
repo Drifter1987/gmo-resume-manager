@@ -1,11 +1,19 @@
 /*
  * GMO Résumé Manager — a resume and experience tracker.
- * Everything lives in localStorage; nothing leaves the device.
+ * Everything lives in localStorage; exports can be imported back exactly.
  */
 
 import { changelogEditor, releasesEditor } from './releases';
+import { buildDocx } from './docx';
+import { buildPdf } from './pdf';
+import { fileNameBase, toJson, toMarkdown, toPlainText } from './format';
+import { parseImport } from './parse';
+import { APP_VERSION, BUILD_NUMBER } from './version';
+import { downloadBlob } from './util';
 
-const STORAGE_KEY = 'resumeStudio.v1';
+const STORAGE_KEY = 'gmoResumeManager.v2';
+const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
+const UI_KEY = 'gmoResumeManager.ui.v1';
 
 /* -------------------------------------------------------------------- */
 /* helpers                                                              */
@@ -118,6 +126,17 @@ const COLLECTIONS = {
 
 const COLLECTION_KEYS = Object.keys(COLLECTIONS);
 
+function defaultSettings() {
+  return {
+    theme: 'dark',
+    font: 'sans',
+    density: 'comfortable',
+    showSummary: true,
+    showTags: true,
+    sections: { experience: true, education: true, projects: true, skills: true }
+  };
+}
+
 function emptyState() {
   return {
     profile: {
@@ -133,7 +152,8 @@ function emptyState() {
     experience: [],
     education: [],
     projects: [],
-    skills: []
+    skills: [],
+    settings: defaultSettings()
   };
 }
 
@@ -210,7 +230,8 @@ function exampleState() {
       { id: uid(), label: 'Languages', items: 'TypeScript, Go, Java, SQL' },
       { id: uid(), label: 'Systems', items: 'Postgres, Kafka, Redis, AWS' },
       { id: uid(), label: 'Practices', items: 'Design docs, mentoring, incident review' }
-    ]
+    ],
+    settings: defaultSettings()
   };
 }
 
@@ -219,12 +240,15 @@ function exampleState() {
 /* -------------------------------------------------------------------- */
 
 let state = emptyState();
+let ui = { section: 'profile', scrolls: {}, pageY: 0 };
 let saveTimer = null;
 let hintTimer = null;
+let toastTimer = null;
+let uiTimer = null;
 
-function load() {
+function loadState() {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY);
     return raw ? normalize(JSON.parse(raw)) : emptyState();
   } catch (error) {
     return emptyState();
@@ -266,19 +290,71 @@ function normalize(data) {
       });
   });
 
+  base.settings = normalizeSettings(source.settings);
   return base;
+}
+
+function normalizeSettings(raw) {
+  const out = defaultSettings();
+  if (!raw || typeof raw !== 'object') return out;
+
+  if (raw.theme === 'light' || raw.theme === 'dark') out.theme = raw.theme;
+  if (raw.font === 'serif' || raw.font === 'sans') out.font = raw.font;
+  if (raw.density === 'compact' || raw.density === 'comfortable') out.density = raw.density;
+  if (typeof raw.showSummary === 'boolean') out.showSummary = raw.showSummary;
+  if (typeof raw.showTags === 'boolean') out.showTags = raw.showTags;
+
+  if (raw.sections && typeof raw.sections === 'object') {
+    ['experience', 'education', 'projects', 'skills'].forEach((key) => {
+      if (typeof raw.sections[key] === 'boolean') out.sections[key] = raw.sections[key];
+    });
+  }
+
+  return out;
 }
 
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      showHint('Saved on this device');
-    } catch (error) {
-      showHint('Could not save — storage is unavailable');
-    }
-  }, 200);
+  setStatus('Unsaved changes…');
+  saveTimer = setTimeout(flushSave, 220);
+}
+
+function flushSave() {
+  clearTimeout(saveTimer);
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    setStatus('Saved on this device');
+  } catch (error) {
+    setStatus('Could not save — storage is unavailable');
+  }
+}
+
+function loadUi() {
+  try {
+    const raw = window.localStorage.getItem(UI_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return;
+    if (typeof parsed.section === 'string') ui.section = parsed.section;
+    if (parsed.scrolls && typeof parsed.scrolls === 'object') ui.scrolls = parsed.scrolls;
+    if (typeof parsed.pageY === 'number') ui.pageY = parsed.pageY;
+  } catch (error) {
+    /* ignore a corrupt UI record */
+  }
+}
+
+function saveUi() {
+  clearTimeout(uiTimer);
+  try {
+    window.localStorage.setItem(UI_KEY, JSON.stringify(ui));
+  } catch (error) {
+    /* storage may be unavailable */
+  }
+}
+
+function scheduleUiSave() {
+  clearTimeout(uiTimer);
+  uiTimer = setTimeout(saveUi, 300);
 }
 
 function setPath(target, path, value) {
@@ -295,8 +371,6 @@ function setPath(target, path, value) {
 /* -------------------------------------------------------------------- */
 /* editor                                                               */
 /* -------------------------------------------------------------------- */
-
-let activeSection = 'profile';
 
 function field(label, path, value, placeholder, options) {
   const opts = options || {};
@@ -320,6 +394,33 @@ function toolButtons(collection, id, index, total) {
     <button class="icon-btn" type="button" data-action="move-up" data-col="${collection}" data-id="${id}" title="Move up" ${index === 0 ? 'disabled' : ''}>↑</button>
     <button class="icon-btn" type="button" data-action="move-down" data-col="${collection}" data-id="${id}" title="Move down" ${index === total - 1 ? 'disabled' : ''}>↓</button>
     <button class="icon-btn danger" type="button" data-action="remove" data-col="${collection}" data-id="${id}" title="Delete">✕</button>
+  `;
+}
+
+function cardHead(collection, item, index, total, title) {
+  return `
+    <div class="card-head">
+      <span class="card-index">${index + 1}</span>
+      <span class="card-title">${esc(title)}</span>
+      <div class="card-tools">${toolButtons(collection, item.id, index, total)}</div>
+    </div>
+  `;
+}
+
+function emptyNote(text) {
+  return `<div class="empty-note">${esc(text)}</div>`;
+}
+
+function editorShell(title, subtitle, body, collection) {
+  return `
+    <div class="panel-head">
+      <h2>${esc(title)}</h2>
+      <p class="panel-sub">${esc(subtitle)}</p>
+    </div>
+    ${body}
+    <button class="btn btn-block" type="button" data-action="add" data-col="${collection}">+ Add ${esc(
+      COLLECTIONS[collection].noun
+    )}</button>
   `;
 }
 
@@ -348,12 +449,8 @@ function experienceEditor() {
   const cards = items
     .map((item, index) => {
       const base = `experience.${index}`;
-      let html = `<div class="card" data-card-id="${item.id}">
-        <div class="card-head">
-          <span class="card-index">${index + 1}</span>
-          <span class="card-title">${esc(item.role || item.company || 'Untitled role')}</span>
-          <div class="card-tools">${toolButtons('experience', item.id, index, items.length)}</div>
-        </div>
+      return `<div class="card" data-card-id="${item.id}">
+        ${cardHead('experience', item, index, items.length, item.role || item.company || 'Untitled role')}
         <div class="form-grid">
           ${field('Role', base + '.role', item.role, 'Senior software engineer', { span: 'span-2' })}
           ${field('Company', base + '.company', item.company, 'Northwind Labs')}
@@ -368,7 +465,6 @@ function experienceEditor() {
           ${field('Tags', base + '.tags', item.tags, 'TypeScript, Postgres, leadership', { span: 'span-2' })}
         </div>
       </div>`;
-      return html;
     })
     .join('');
 
@@ -386,11 +482,7 @@ function educationEditor() {
     .map((item, index) => {
       const base = `education.${index}`;
       return `<div class="card" data-card-id="${item.id}">
-        <div class="card-head">
-          <span class="card-index">${index + 1}</span>
-          <span class="card-title">${esc(item.degree || item.school || 'Untitled degree')}</span>
-          <div class="card-tools">${toolButtons('education', item.id, index, items.length)}</div>
-        </div>
+        ${cardHead('education', item, index, items.length, item.degree || item.school || 'Untitled degree')}
         <div class="form-grid">
           ${field('School', base + '.school', item.school, 'University of Edinburgh', { span: 'span-2' })}
           ${field('Degree', base + '.degree', item.degree, 'BSc')}
@@ -418,11 +510,7 @@ function projectsEditor() {
     .map((item, index) => {
       const base = `projects.${index}`;
       return `<div class="card" data-card-id="${item.id}">
-        <div class="card-head">
-          <span class="card-index">${index + 1}</span>
-          <span class="card-title">${esc(item.name || 'Untitled project')}</span>
-          <div class="card-tools">${toolButtons('projects', item.id, index, items.length)}</div>
-        </div>
+        ${cardHead('projects', item, index, items.length, item.name || 'Untitled project')}
         <div class="form-grid">
           ${field('Name', base + '.name', item.name, 'Ledgerline')}
           ${field('Link', base + '.link', item.link, 'github.com/you/project')}
@@ -447,11 +535,7 @@ function skillsEditor() {
     .map((item, index) => {
       const base = `skills.${index}`;
       return `<div class="card" data-card-id="${item.id}">
-        <div class="card-head">
-          <span class="card-index">${index + 1}</span>
-          <span class="card-title">${esc(item.label || 'Untitled group')}</span>
-          <div class="card-tools">${toolButtons('skills', item.id, index, items.length)}</div>
-        </div>
+        ${cardHead('skills', item, index, items.length, item.label || 'Untitled group')}
         <div class="form-grid">
           ${field('Group', base + '.label', item.label, 'Languages')}
           ${field('Skills', base + '.items', item.items, 'TypeScript, Go, SQL')}
@@ -468,128 +552,184 @@ function skillsEditor() {
   );
 }
 
-function emptyNote(text) {
-  return `<div class="empty-note">${esc(text)}</div>`;
+function formatCard(kind, ext, title, description, primary) {
+  return `
+    <div class="format-card${primary ? ' is-primary' : ''}">
+      <span class="format-icon">${esc(ext)}</span>
+      <div>
+        <p class="format-name">${esc(title)}</p>
+        <p class="format-desc">${esc(description)}</p>
+      </div>
+      <button class="btn${primary ? ' btn-primary' : ''}" type="button" data-export="${kind}">Download</button>
+    </div>
+  `;
 }
 
-function editorShell(title, subtitle, body, collection) {
+function exportEditor() {
   return `
     <div class="panel-head">
-      <h2>${esc(title)}</h2>
-      <p class="panel-sub">${esc(subtitle)}</p>
+      <h2>Export</h2>
+      <p class="panel-sub">Download the resume in the format you need. Every format carries the full data
+      set, so importing any of them anywhere rebuilds the same preview.</p>
     </div>
-    ${body}
-    <button class="btn btn-block" type="button" data-action="add" data-col="${collection}">+ Add ${esc(
-      COLLECTIONS[collection].noun
-    )}</button>
+    <div class="format-grid">
+      ${formatCard('pdf', 'PDF', 'PDF', 'A4, selectable text, ready to send.', true)}
+      ${formatCard('docx', 'DOCX', 'Word document', 'Opens in Word, Google Docs or Pages.')}
+      ${formatCard('txt', 'TXT', 'Plain text', 'Readable anywhere, with a hidden data block.')}
+      ${formatCard('md', 'MD', 'Markdown', 'Readable in a repo or notes app, imports back.')}
+      ${formatCard('json', 'JSON', 'JSON backup', 'Everything, including settings and order.')}
+    </div>
+
+    <div class="panel-head panel-head-tight">
+      <h2>Import</h2>
+      <p class="panel-sub">Restore a JSON backup, or a Markdown or TXT export. The preview is rebuilt exactly
+      as it was when you exported.</p>
+    </div>
+
+    <div class="drop-zone" id="drop-zone">
+      <strong>Drop a resume file here</strong>
+      <span>.json, .md or .txt</span>
+      <button class="btn" type="button" data-action="import">Choose a file</button>
+    </div>
+
+    <p class="fineprint">Markdown and TXT exports include a small hidden copy of the data, which is what makes
+    the round trip exact. Opening and saving one of those files in a text editor keeps it intact — just avoid
+    deleting the block at the end.</p>
+  `;
+}
+
+function segButton(key, value, label, on) {
+  return `<button class="seg-btn${on ? ' is-on' : ''}" type="button" data-set="${key}" data-value="${value}">${esc(
+    label
+  )}</button>`;
+}
+
+function switchHtml(path, label, checked) {
+  return `<label class="switch"><input type="checkbox" data-path="${path}" aria-label="${esc(label)}" ${
+    checked ? 'checked' : ''
+  } /></label>`;
+}
+
+function settingsEditor() {
+  const s = state.settings;
+  return `
+    <div class="panel-head">
+      <h2>Settings</h2>
+      <p class="panel-sub">Appearance and data. Changes apply to the preview immediately and travel with
+      JSON exports.</p>
+    </div>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Theme</h3>
+      <div class="seg" role="group" aria-label="Theme">
+        ${segButton('theme', 'dark', 'Dark', s.theme === 'dark')}
+        ${segButton('theme', 'light', 'Light', s.theme === 'light')}
+      </div>
+      <p class="setting-note">Dark is the default. Light keeps the same green and gold accents.</p>
+    </section>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Resume typeface</h3>
+      <div class="seg" role="group" aria-label="Resume typeface">
+        ${segButton('font', 'sans', 'Sans', s.font === 'sans')}
+        ${segButton('font', 'serif', 'Serif', s.font === 'serif')}
+      </div>
+    </section>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Density</h3>
+      <div class="seg" role="group" aria-label="Density">
+        ${segButton('density', 'comfortable', 'Comfortable', s.density === 'comfortable')}
+        ${segButton('density', 'compact', 'Compact', s.density === 'compact')}
+      </div>
+    </section>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Resume content</h3>
+      <div class="switch-row">
+        <span>Summary<small>Show the profile summary at the top.</small></span>
+        ${switchHtml('settings.showSummary', 'Show summary', s.showSummary)}
+      </div>
+      <div class="switch-row">
+        <span>Role tags<small>Show the stack line under each role.</small></span>
+        ${switchHtml('settings.showTags', 'Show role tags', s.showTags)}
+      </div>
+    </section>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Sections</h3>
+      <div class="switch-row">
+        <span>Experience</span>
+        ${switchHtml('settings.sections.experience', 'Show experience', s.sections.experience)}
+      </div>
+      <div class="switch-row">
+        <span>Education</span>
+        ${switchHtml('settings.sections.education', 'Show education', s.sections.education)}
+      </div>
+      <div class="switch-row">
+        <span>Projects</span>
+        ${switchHtml('settings.sections.projects', 'Show projects', s.sections.projects)}
+      </div>
+      <div class="switch-row">
+        <span>Skills</span>
+        ${switchHtml('settings.sections.skills', 'Show skills', s.sections.skills)}
+      </div>
+      <p class="setting-note">Hiding a section only hides it from the resume and the exports; the data stays.</p>
+    </section>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Data</h3>
+      <div class="switch-row">
+        <span>Storage<small>${esc(storageUsage())}</small></span>
+        <span class="mono">${esc(APP_VERSION)}</span>
+      </div>
+      <div class="switch-row">
+        <span>Build<small>Stamped when the app was built.</small></span>
+        <span class="mono">${esc(BUILD_NUMBER)}</span>
+      </div>
+      <div class="danger-zone">
+        <button class="btn btn-danger" type="button" data-action="reset">Clear all data</button>
+      </div>
+    </section>
   `;
 }
 
 const SECTIONS = [
-  { id: 'profile', label: 'Profile', render: profileEditor },
-  { id: 'experience', label: 'Experience', render: experienceEditor },
-  { id: 'education', label: 'Education', render: educationEditor },
-  { id: 'projects', label: 'Projects', render: projectsEditor },
-  { id: 'skills', label: 'Skills', render: skillsEditor },
-  { id: 'releases', label: 'Releases', render: releasesEditor },
-  { id: 'changelog', label: 'Changelog', render: changelogEditor }
+  { id: 'profile', label: 'Profile', group: 'main', render: profileEditor },
+  { id: 'experience', label: 'Experience', group: 'main', render: experienceEditor },
+  { id: 'education', label: 'Education', group: 'main', render: educationEditor },
+  { id: 'projects', label: 'Projects', group: 'main', render: projectsEditor },
+  { id: 'skills', label: 'Skills', group: 'main', render: skillsEditor },
+  { id: 'releases', label: 'Releases', group: 'info', render: releasesEditor },
+  { id: 'changelog', label: 'Changelog', group: 'info', render: changelogEditor },
+  { id: 'export', label: 'Export', group: 'tool', render: exportEditor },
+  { id: 'settings', label: 'Settings', group: 'utility', render: settingsEditor }
 ];
 
+function renderTabs() {
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = SECTIONS.map((section, index) => {
+    const firstOfTool = section.group === 'tool' && (index === 0 || SECTIONS[index - 1].group !== 'tool');
+    const classes = ['tab'];
+    if (section.id === ui.section) classes.push('is-active');
+    if (firstOfTool) classes.push('is-right');
+    return `<button class="${classes.join(' ')}" type="button" role="tab" aria-selected="${
+      section.id === ui.section
+    }" data-tab="${section.id}">${esc(section.label)}</button>`;
+  }).join('');
+}
+
 function renderEditor() {
-  const tabsEl = document.getElementById('tabs');
-  const panelEl = document.getElementById('editor-panel');
-
-  tabsEl.innerHTML = SECTIONS.map(
-    (section) => `<button class="tab${section.id === activeSection ? ' is-active' : ''}" type="button" role="tab"
-      aria-selected="${section.id === activeSection}" data-tab="${section.id}">${esc(section.label)}</button>`
-  ).join('');
-
-  const current = SECTIONS.find((section) => section.id === activeSection) || SECTIONS[0];
-  panelEl.innerHTML = current.render();
-}
-
-/* -------------------------------------------------------------------- */
-/* editor events                                                        */
-/* -------------------------------------------------------------------- */
-
-function handleAction(action, button) {
-  const collection = button.dataset.col;
-  const id = button.dataset.id;
-  const list = state[collection];
-  if (!list) return;
-
-  if (action === 'add') {
-    list.push(COLLECTIONS[collection].make());
-    renderEditor();
-    const cards = document.querySelectorAll('#editor-panel .card');
-    const last = cards[cards.length - 1];
-    if (last) {
-      const firstInput = last.querySelector('input, textarea');
-      if (firstInput) firstInput.focus();
-    }
-    save();
-    renderPreview();
-    return;
-  }
-
-  const index = list.findIndex((item) => item.id === id);
-  if (index === -1) return;
-
-  if (action === 'remove') {
-    if (!window.confirm('Delete this entry?')) return;
-    list.splice(index, 1);
-  } else if (action === 'move-up' && index > 0) {
-    [list[index - 1], list[index]] = [list[index], list[index - 1]];
-  } else if (action === 'move-down' && index < list.length - 1) {
-    [list[index + 1], list[index]] = [list[index], list[index + 1]];
-  } else {
-    return;
-  }
-
-  renderEditor();
-  save();
-  renderPreview();
-}
-
-function bindEditorEvents() {
-  document.getElementById('tabs').addEventListener('click', (event) => {
-    const tab = event.target.closest('[data-tab]');
-    if (!tab) return;
-    activeSection = tab.dataset.tab;
-    renderEditor();
-  });
-
   const panel = document.getElementById('editor-panel');
+  const section = SECTIONS.find((item) => item.id === ui.section) || SECTIONS[0];
+  panel.innerHTML = section.render();
+}
 
-  panel.addEventListener('input', (event) => {
-    const target = event.target;
-    const path = target.dataset.path;
-    if (!path) return;
-
-    const value = target.type === 'checkbox' ? target.checked : target.value;
-    setPath(state, path, value);
-    save();
-    renderPreview();
-
-    if (target.type === 'checkbox') {
-      const card = target.closest('.card');
-      const cardId = card ? card.dataset.cardId : null;
-      renderEditor();
-      if (cardId) {
-        const again = document.querySelector(`#editor-panel .card[data-card-id="${cardId}"]`);
-        if (again) {
-          const checkbox = again.querySelector('input[type="checkbox"]');
-          if (checkbox) checkbox.focus();
-        }
-      }
-    }
-  });
-
-  panel.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-action]');
-    if (!button) return;
-    handleAction(button.dataset.action, button);
-  });
+function applyAppearance() {
+  const root = document.documentElement;
+  root.dataset.theme = state.settings.theme;
+  root.dataset.font = state.settings.font;
+  root.dataset.density = state.settings.density;
 }
 
 /* -------------------------------------------------------------------- */
@@ -610,7 +750,11 @@ function renderRole(item) {
       </div>
       ${sub ? `<p class="r-entry-sub">${sub}</p>` : ''}
       ${bullets.length ? `<ul class="r-bullets">${bullets.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
-      ${tags.length ? `<p class="r-tags">${tags.map((tag) => esc(tag)).join(' · ')}</p>` : ''}
+      ${
+        state.settings.showTags && tags.length
+          ? `<p class="r-tags">${tags.map((tag) => esc(tag)).join(' · ')}</p>`
+          : ''
+      }
     </div>
   `;
 }
@@ -660,38 +804,37 @@ function sectionTitle(text) {
 function renderPreview() {
   const resume = document.getElementById('resume');
   const profile = state.profile;
+  const settings = state.settings;
   const body = [];
 
   const contact = [];
-  if (profile.email) {
-    contact.push(`<a href="mailto:${esc(profile.email)}">${esc(profile.email)}</a>`);
-  }
+  if (profile.email) contact.push(`<a href="mailto:${esc(profile.email)}">${esc(profile.email)}</a>`);
   if (profile.phone) contact.push(`<span>${esc(profile.phone)}</span>`);
   if (profile.location) contact.push(`<span>${esc(profile.location)}</span>`);
   if (profile.website) contact.push(webLink(profile.website));
   if (profile.linkedin) contact.push(webLink(profile.linkedin));
 
-  if (profile.summary.trim()) {
+  if (settings.showSummary && profile.summary.trim()) {
     body.push(`<section class="r-section"><p class="r-summary">${esc(profile.summary)}</p></section>`);
   }
 
   const roles = state.experience.filter((item) => item.role || item.company);
-  if (roles.length) {
+  if (settings.sections.experience && roles.length) {
     body.push(`<section class="r-section">${sectionTitle('Experience')}${roles.map(renderRole).join('')}</section>`);
   }
 
   const schools = state.education.filter((item) => item.school || item.degree);
-  if (schools.length) {
+  if (settings.sections.education && schools.length) {
     body.push(`<section class="r-section">${sectionTitle('Education')}${schools.map(renderEducation).join('')}</section>`);
   }
 
   const projects = state.projects.filter((item) => item.name);
-  if (projects.length) {
+  if (settings.sections.projects && projects.length) {
     body.push(`<section class="r-section">${sectionTitle('Projects')}${projects.map(renderProject).join('')}</section>`);
   }
 
   const skills = state.skills.filter((item) => item.label || item.items);
-  if (skills.length) {
+  if (settings.sections.skills && skills.length) {
     body.push(
       `<section class="r-section">${sectionTitle('Skills')}${skills
         .map(
@@ -710,8 +853,12 @@ function renderPreview() {
     resume.innerHTML = `
       <div class="resume-empty">
         <strong>Your resume will appear here</strong>
-        Start in <em>Profile</em> with your name and a one-line headline, then add roles in <em>Experience</em>.
-        Not sure where to begin? Load the <em>Example data</em> to see the shape of it.
+        <p>Start with your name and a one-line headline in Profile, then add roles in Experience.
+        Everything updates in this preview as you type.</p>
+        <div class="empty-actions">
+          <button class="btn btn-primary" type="button" data-preview-action="profile">Go to Profile</button>
+          <button class="btn" type="button" data-preview-action="example">Load sample data</button>
+        </div>
       </div>
     `;
     return;
@@ -728,87 +875,190 @@ function renderPreview() {
 }
 
 /* -------------------------------------------------------------------- */
-/* export / import                                                      */
+/* actions                                                              */
 /* -------------------------------------------------------------------- */
 
-function download(filename, text, type) {
-  const blob = new Blob([text], { type: type || 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+const EXPORT_FORMATS = {
+  pdf: { label: 'PDF', ext: 'pdf' },
+  docx: { label: 'DOCX', ext: 'docx' },
+  txt: { label: 'TXT', ext: 'txt' },
+  md: { label: 'Markdown', ext: 'md' },
+  json: { label: 'JSON', ext: 'json' }
+};
+
+function exportFile(kind) {
+  const meta = EXPORT_FORMATS[kind];
+  if (!meta) return;
+  const base = fileNameBase(state);
+  const name = base + '.' + meta.ext;
+
+  try {
+    if (kind === 'pdf') {
+      downloadBlob(buildPdf(state), name);
+    } else if (kind === 'docx') {
+      downloadBlob(buildDocx(state), name);
+    } else if (kind === 'md') {
+      downloadBlob(new Blob([toMarkdown(state)], { type: 'text/markdown;charset=utf-8' }), name);
+    } else if (kind === 'txt') {
+      downloadBlob(new Blob([toPlainText(state)], { type: 'text/plain;charset=utf-8' }), name);
+    } else {
+      downloadBlob(new Blob([toJson(state)], { type: 'application/json' }), name);
+    }
+    toast(meta.label + ' downloaded');
+  } catch (error) {
+    console.error(error);
+    toast(
+      'Could not create the ' + meta.label + ': ' + (error && error.message ? error.message : 'unknown error'),
+      true
+    );
+  }
 }
 
-function fileName(extension) {
-  return slugify(state.profile.name || 'resume') + '-resume.' + extension;
+function importFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    try {
+      const result = parseImport(file.name || '', String(reader.result));
+      state = normalize(result.state);
+      applyAppearance();
+      goTo('profile');
+      renderPreview();
+      save();
+      flushSave();
+      toast('Imported ' + result.format + ' — preview restored');
+    } catch (error) {
+      toast(error && error.message ? error.message : 'Could not import that file', true);
+    }
+    const input = document.getElementById('file-input');
+    if (input) input.value = '';
+  };
+
+  reader.onerror = () => {
+    toast('That file could not be read', true);
+    const input = document.getElementById('file-input');
+    if (input) input.value = '';
+  };
+
+  reader.readAsText(file);
 }
 
-function toMarkdown() {
-  const lines = [];
-  const profile = state.profile;
+function loadExample() {
+  if (hasAnyData() && !window.confirm('Replace what you have with the example resume?')) return;
+  state = exampleState();
+  applyAppearance();
+  goTo('profile');
+  renderPreview();
+  save();
+  flushSave();
+  toast('Sample resume loaded');
+}
 
-  if (profile.name) lines.push('# ' + profile.name, '');
-  if (profile.headline) lines.push('**' + profile.headline + '**', '');
+function handleAction(action, button) {
+  if (action === 'import') {
+    document.getElementById('file-input').click();
+    return;
+  }
 
-  const contact = [profile.email, profile.phone, profile.location, profile.website, profile.linkedin].filter(Boolean);
-  if (contact.length) lines.push(contact.join(' · '), '');
-  if (profile.summary) lines.push(profile.summary, '');
+  if (action === 'reset') {
+    if (!window.confirm('Delete everything and start from an empty resume?')) return;
+    state = emptyState();
+    applyAppearance();
+    goTo('profile');
+    renderPreview();
+    save();
+    flushSave();
+    toast('All data cleared');
+    return;
+  }
 
-  const roles = state.experience.filter((item) => item.role || item.company);
-  if (roles.length) {
-    lines.push('## Experience', '');
-    roles.forEach((item) => {
-      const head = [item.role, item.company].filter(Boolean).join(' — ');
-      lines.push('### ' + head);
-      const dates = dateRange(item);
-      const place = [dates, item.location].filter(Boolean).join(' · ');
-      if (place) lines.push('*' + place + '*');
-      splitLines(item.highlights).forEach((bullet) => lines.push('- ' + bullet));
-      const tags = splitList(item.tags);
-      if (tags.length) lines.push('', '`' + tags.join('`, `') + '`');
-      lines.push('');
+  const collection = button.dataset.col;
+  const id = button.dataset.id;
+  const list = state[collection];
+  if (!list) return;
+
+  if (action === 'add') {
+    list.push(COLLECTIONS[collection].make());
+    renderEditor();
+    const cards = document.querySelectorAll('#editor-panel .card');
+    const last = cards[cards.length - 1];
+    if (last) {
+      const firstInput = last.querySelector('input:not([type="checkbox"]), textarea');
+      if (firstInput) firstInput.focus();
+    }
+    save();
+    renderPreview();
+    return;
+  }
+
+  const index = list.findIndex((item) => item.id === id);
+  if (index === -1) return;
+
+  if (action === 'remove') {
+    if (!window.confirm('Delete this entry?')) return;
+    list.splice(index, 1);
+  } else if (action === 'move-up' && index > 0) {
+    [list[index - 1], list[index]] = [list[index], list[index - 1]];
+  } else if (action === 'move-down' && index < list.length - 1) {
+    [list[index + 1], list[index]] = [list[index], list[index + 1]];
+  } else {
+    return;
+  }
+
+  renderEditor();
+  save();
+  renderPreview();
+}
+
+function applySetting(key, value) {
+  if (key === 'theme') state.settings.theme = value === 'light' ? 'light' : 'dark';
+  else if (key === 'font') state.settings.font = value === 'serif' ? 'serif' : 'sans';
+  else if (key === 'density') state.settings.density = value === 'compact' ? 'compact' : 'comfortable';
+  else return;
+
+  applyAppearance();
+  renderEditor();
+  renderPreview();
+  save();
+}
+
+function goTo(id) {
+  if (!SECTIONS.some((section) => section.id === id)) return;
+
+  const editor = document.getElementById('editor');
+  if (editor) ui.scrolls[ui.section] = editor.scrollTop;
+
+  ui.section = id;
+  saveUi();
+  renderTabs();
+  renderEditor();
+  renderPreview();
+
+  if (editor) {
+    const y = ui.scrolls[id] || 0;
+    requestAnimationFrame(() => {
+      editor.scrollTop = y;
     });
   }
+}
 
-  const schools = state.education.filter((item) => item.school || item.degree);
-  if (schools.length) {
-    lines.push('## Education', '');
-    schools.forEach((item) => {
-      const head = [item.degree, item.field].filter(Boolean).join(', ') || item.school;
-      lines.push('### ' + head);
-      const dates = dateRange(item);
-      const place = [item.school, dates].filter(Boolean).join(' · ');
-      if (place) lines.push('*' + place + '*');
-      splitLines(item.details).forEach((bullet) => lines.push('- ' + bullet));
-      lines.push('');
-    });
+function storageUsage() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY) || '';
+    const kb = Math.max(1, Math.round(raw.length / 1024));
+    return 'About ' + kb + ' KB on this device';
+  } catch (error) {
+    return 'Storage is unavailable in this browser';
   }
+}
 
-  const projects = state.projects.filter((item) => item.name);
-  if (projects.length) {
-    lines.push('## Projects', '');
-    projects.forEach((item) => {
-      lines.push('### ' + item.name);
-      if (item.link) lines.push(item.link);
-      if (item.description) lines.push(item.description);
-      const tech = splitList(item.tech);
-      if (tech.length) lines.push('', '`' + tech.join('`, `') + '`');
-      lines.push('');
-    });
-  }
+function hasAnyData() {
+  return JSON.stringify(state) !== JSON.stringify(emptyState());
+}
 
-  const skills = state.skills.filter((item) => item.label || item.items);
-  if (skills.length) {
-    lines.push('## Skills', '');
-    skills.forEach((item) => lines.push('- **' + (item.label || 'Skills') + ':** ' + item.items));
-    lines.push('');
-  }
-
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+function setStatus(text) {
+  const el = document.getElementById('dock-status');
+  if (el) el.textContent = text;
 }
 
 function showHint(message) {
@@ -817,11 +1067,164 @@ function showHint(message) {
   hint.textContent = message;
   hint.classList.add('is-visible');
   clearTimeout(hintTimer);
-  hintTimer = setTimeout(() => hint.classList.remove('is-visible'), 1600);
+  hintTimer = setTimeout(() => hint.classList.remove('is-visible'), 1800);
 }
 
-function hasAnyData() {
-  return JSON.stringify(state) !== JSON.stringify(emptyState());
+function toast(message, isError) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.className = 'toast is-visible' + (isError ? ' is-error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.className = 'toast';
+  }, 2800);
+}
+
+/* -------------------------------------------------------------------- */
+/* events                                                               */
+/* -------------------------------------------------------------------- */
+
+function onPanelInput(event) {
+  const target = event.target;
+
+  if (event.type === 'change' && target.tagName !== 'SELECT') return;
+
+  const path = target.dataset ? target.dataset.path : null;
+  if (!path) return;
+
+  const value = target.type === 'checkbox' ? target.checked : target.value;
+  setPath(state, path, value);
+
+  if (path.indexOf('settings.') === 0) applyAppearance();
+
+  save();
+  renderPreview();
+
+  if (target.type === 'checkbox' && path.indexOf('experience.') === 0) {
+    const card = target.closest('.card');
+    const cardId = card ? card.dataset.cardId : null;
+    renderEditor();
+    const again = cardId ? document.querySelector(`#editor-panel .card[data-card-id="${cardId}"]`) : null;
+    const checkbox = again ? again.querySelector('input[type="checkbox"]') : null;
+    if (checkbox) checkbox.focus();
+  }
+}
+
+function onPanelClick(event) {
+  const exportButton = event.target.closest('[data-export]');
+  if (exportButton) {
+    exportFile(exportButton.dataset.export);
+    return;
+  }
+
+  const setButton = event.target.closest('[data-set]');
+  if (setButton) {
+    applySetting(setButton.dataset.set, setButton.dataset.value);
+    return;
+  }
+
+  const actionButton = event.target.closest('[data-action]');
+  if (actionButton) {
+    handleAction(actionButton.dataset.action, actionButton);
+  }
+}
+
+function onDockClick(event) {
+  const button = event.target.closest('[data-dock]');
+  if (!button) return;
+
+  const action = button.dataset.dock;
+  if (action === 'import') document.getElementById('file-input').click();
+  else if (action === 'example') loadExample();
+  else if (action === 'export') goTo('export');
+  else if (action === 'settings') goTo('settings');
+  else if (action === 'pdf') exportFile('pdf');
+}
+
+function bindEvents() {
+  document.getElementById('tabs').addEventListener('click', (event) => {
+    const tab = event.target.closest('[data-tab]');
+    if (tab) goTo(tab.dataset.tab);
+  });
+
+  const panel = document.getElementById('editor-panel');
+  panel.addEventListener('input', onPanelInput);
+  panel.addEventListener('change', onPanelInput);
+  panel.addEventListener('click', onPanelClick);
+
+  panel.addEventListener('dragover', (event) => {
+    const zone = event.target.closest('#drop-zone');
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.add('is-over');
+  });
+
+  panel.addEventListener('dragleave', (event) => {
+    const zone = event.target.closest('#drop-zone');
+    if (zone) zone.classList.remove('is-over');
+  });
+
+  panel.addEventListener('drop', (event) => {
+    const zone = event.target.closest('#drop-zone');
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.remove('is-over');
+    const files = event.dataTransfer && event.dataTransfer.files;
+    if (files && files[0]) importFile(files[0]);
+  });
+
+  document.getElementById('resume').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-preview-action]');
+    if (!button) return;
+    if (button.dataset.previewAction === 'example') loadExample();
+    else goTo('profile');
+  });
+
+  document.getElementById('dock').addEventListener('click', onDockClick);
+  document.getElementById('btn-pdf').addEventListener('click', () => exportFile('pdf'));
+  document.getElementById('btn-print').addEventListener('click', () => window.print());
+
+  const fileInput = document.getElementById('file-input');
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (file) importFile(file);
+    fileInput.value = '';
+  });
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      ui.pageY = window.scrollY;
+      scheduleUiSave();
+    },
+    { passive: true }
+  );
+
+  document.getElementById('editor').addEventListener(
+    'scroll',
+    (event) => {
+      ui.scrolls[ui.section] = event.target.scrollTop;
+      scheduleUiSave();
+    },
+    { passive: true }
+  );
+
+  window.addEventListener('beforeunload', () => {
+    flushSave();
+    saveUi();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      flushSave();
+      saveUi();
+    }
+  });
 }
 
 /* -------------------------------------------------------------------- */
@@ -829,63 +1232,22 @@ function hasAnyData() {
 /* -------------------------------------------------------------------- */
 
 function init() {
-  state = load();
-  bindEditorEvents();
+  state = loadState();
+  loadUi();
+
+  if (!SECTIONS.some((section) => section.id === ui.section)) ui.section = 'profile';
+
+  applyAppearance();
+  bindEvents();
+  renderTabs();
   renderEditor();
   renderPreview();
+  setStatus('Saved on this device');
 
-  document.getElementById('btn-print').addEventListener('click', () => {
-    window.print();
-  });
-
-  document.getElementById('btn-export').addEventListener('click', () => {
-    download(fileName('json'), JSON.stringify(state, null, 2), 'application/json');
-    showHint('JSON downloaded');
-  });
-
-  document.getElementById('btn-markdown').addEventListener('click', () => {
-    download(fileName('md'), toMarkdown(), 'text/markdown;charset=utf-8');
-    showHint('Markdown downloaded');
-  });
-
-  document.getElementById('btn-example').addEventListener('click', () => {
-    if (hasAnyData() && !window.confirm('Replace what you have with the example resume?')) return;
-    state = exampleState();
-    activeSection = 'profile';
-    renderEditor();
-    renderPreview();
-    save();
-    showHint('Example data loaded');
-  });
-
-  const fileInput = document.getElementById('file-input');
-  document.getElementById('btn-import').addEventListener('click', () => {
-    fileInput.click();
-  });
-
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        state = normalize(JSON.parse(String(reader.result)));
-        activeSection = 'profile';
-        renderEditor();
-        renderPreview();
-        save();
-        showHint('Imported');
-      } catch (error) {
-        window.alert('That file could not be read as resume JSON.');
-      }
-      fileInput.value = '';
-    };
-    reader.onerror = () => {
-      window.alert('That file could not be read.');
-      fileInput.value = '';
-    };
-    reader.readAsText(file);
+  requestAnimationFrame(() => {
+    window.scrollTo(0, ui.pageY || 0);
+    const editor = document.getElementById('editor');
+    if (editor) editor.scrollTop = ui.scrolls[ui.section] || 0;
   });
 
   if (hasAnyData()) showHint('Restored from this device');

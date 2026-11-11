@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-font="sans" data-density="comfortable">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#07110d" />
   <title>GMO Résumé Manager — resume &amp; experience tracker</title>
-  <meta name="description" content="Track your roles, achievements and skills, and turn them into a resume." />
+  <meta name="description" content="Track your roles, achievements and skills, and export the resume as PDF, DOCX, TXT, Markdown or JSON." />
   <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
@@ -13,42 +13,57 @@
   <div class="bg-veil" aria-hidden="true"></div>
 
   <header class="app-bar">
-    <div class="brand">
-      <span class="brand-mark">GMO</span>
-      <div>
-        <h1>Résumé Manager</h1>
-        <p class="brand-sub">Resume &amp; experience tracker</p>
+    <div class="bar-row">
+      <div class="brand">
+        <span class="brand-mark">GMO</span>
+        <div class="brand-text">
+          <h1>Résumé Manager</h1>
+          <p class="brand-sub">Resume &amp; experience tracker</p>
+        </div>
+      </div>
+      <div class="bar-status">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="bar-status-label">Live preview</span>
+        <span class="preview-hint" id="saved-hint" role="status" aria-live="polite"></span>
       </div>
     </div>
-    <div class="app-actions">
-      <button class="btn" id="btn-example" type="button">Example data</button>
-      <button class="btn" id="btn-export" type="button">Export JSON</button>
-      <button class="btn" id="btn-import" type="button">Import</button>
-      <button class="btn" id="btn-markdown" type="button">Markdown</button>
-      <button class="btn btn-primary" id="btn-print" type="button">Print / PDF</button>
-      <input type="file" id="file-input" accept=".json,application/json" hidden />
-    </div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Sections"></nav>
   </header>
 
   <div class="app">
-    <aside class="editor">
-      <nav class="tabs" id="tabs" role="tablist" aria-label="Sections"></nav>
+    <aside class="editor" id="editor">
       <div class="panel" id="editor-panel"></div>
     </aside>
 
     <main class="preview-wrap">
       <div class="preview-toolbar">
-        <span>Live preview</span>
-        <span class="preview-hint" id="saved-hint" role="status" aria-live="polite"></span>
+        <span>Resume preview</span>
+        <span class="preview-actions">
+          <button class="btn btn-sm" id="btn-print" type="button">Print</button>
+          <button class="btn btn-sm btn-primary" id="btn-pdf" type="button">PDF</button>
+        </span>
       </div>
       <article class="resume" id="resume"></article>
     </main>
   </div>
 
-  <footer class="app-footer">
-    <span class="footer-brand">GMO Résumé Manager</span>
-    <span class="footer-meta" id="footer-meta">v2.0.0 · build dev</span>
-  </footer>
+  <nav class="dock" id="dock" aria-label="Quick actions">
+    <span class="dock-status" id="dock-status">Saved on this device</span>
+    <div class="dock-actions">
+      <button class="dock-btn" type="button" data-dock="import">Import</button>
+      <button class="dock-btn" type="button" data-dock="example">Sample</button>
+      <button class="dock-btn" type="button" data-dock="export">Export</button>
+      <button class="dock-btn" type="button" data-dock="settings">Settings</button>
+      <span class="dock-build" id="dock-build">v2.1.0 · build dev</span>
+    </div>
+  </nav>
+
+  <input
+    type="file"
+    id="file-input"
+    accept=".json,.md,.markdown,.txt,application/json,text/markdown,text/plain"
+    hidden
+  />
 
   <script type="module" src="/src/main.ts"></script>
 </body>
