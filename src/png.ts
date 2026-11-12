@@ -210,11 +210,19 @@ export async function buildPngPages(state: ResumeState): Promise<Blob[]> {
   const skills = state.skills.filter((item) => item.label || item.items);
   if (s.sections.skills && skills.length) {
     await section('Skills');
+
+    let widest = 210;
+    for (const item of skills) {
+      font(700, 20);
+      widest = Math.max(widest, ctx.measureText((item.label || 'Skills') + ':').width + 24);
+    }
+    const column = Math.min(widest, (PAGE_W - MARGIN * 2) * 0.42);
+
     for (const item of skills) {
       const label = (item.label || 'Skills') + ':';
       font(700, 20);
       const labelWidth = ctx.measureText(label).width;
-      const indent = Math.min(Math.max(labelWidth + 24, 210), (PAGE_W - MARGIN * 2) * 0.45);
+      const indent = column;
       font(400, 20);
       const lines = wrap(item.items, PAGE_W - MARGIN * 2 - indent);
       const ownLine = labelWidth + 18 > indent;

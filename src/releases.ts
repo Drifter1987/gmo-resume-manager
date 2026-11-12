@@ -9,6 +9,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.5.3',
+    name: 'Aligned skill columns',
+    summary: 'Every skill value starts at the same column in the PDF and PNG.',
+    notes: [
+      'The skills block measures its widest label once and uses that as the column, so values line up instead of stepping in and out.',
+      'Rows whose label is wider than the column still put the value on its own line, wrapped.'
+    ]
+  },
+  {
     version: '2.5.2',
     name: 'Skills wrap in the PDF and PNG',
     summary: 'Long skill labels no longer collide with their values or get clipped at the page edge.',

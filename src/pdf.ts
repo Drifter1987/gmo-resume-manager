@@ -183,11 +183,19 @@ export function buildPdf(state: ResumeState): Blob {
   const skills = state.skills.filter((item) => item.label || item.items);
   if (s.sections.skills && skills.length) {
     section('Skills');
+
+    let widest = 96;
+    skills.forEach((item) => {
+      font('bold', 9.5);
+      widest = Math.max(widest, doc.getTextWidth(ascii(item.label || 'Skills') + ':') + 14);
+    });
+    const column = Math.min(widest, contentWidth * 0.42);
+
     skills.forEach((item) => {
       const label = ascii(item.label || 'Skills') + ':';
       font('bold', 9.5);
       const labelWidth = doc.getTextWidth(label);
-      const indent = Math.min(Math.max(labelWidth + 14, 96), contentWidth * 0.45);
+      const indent = column;
       font('normal', 9.5);
       const valueLines = doc.splitTextToSize(ascii(item.items), contentWidth - indent) as string[];
       const ownLine = labelWidth + 10 > indent;
