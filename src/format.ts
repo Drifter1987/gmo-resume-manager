@@ -56,6 +56,18 @@ export function toMarkdown(state: ResumeState): string {
     });
   }
 
+  const certs = state.certifications.filter((item) => item.name);
+  if (s.sections.certifications && certs.length) {
+    out.push('## Certifications', '');
+    certs.forEach((item) => {
+      const meta = [item.issuer, item.date, item.expires ? 'expires ' + item.expires : '']
+        .filter(Boolean)
+        .join(' · ');
+      out.push(`- **${item.name}**${meta ? ' — ' + meta : ''}`);
+    });
+    out.push('');
+  }
+
   const projects = state.projects.filter((item) => item.name);
   if (s.sections.projects && projects.length) {
     out.push('## Projects', '');
@@ -120,6 +132,18 @@ export function toPlainText(state: ResumeState): string {
       splitLines(item.details).forEach((line) => out.push('- ' + line));
       out.push('');
     });
+  }
+
+  const certsText = state.certifications.filter((item) => item.name);
+  if (s.sections.certifications && certsText.length) {
+    out.push('CERTIFICATIONS', '');
+    certsText.forEach((item) => {
+      const meta = [item.issuer, item.date, item.expires ? 'expires ' + item.expires : '']
+        .filter(Boolean)
+        .join(' | ');
+      out.push('- ' + item.name + (meta ? ' | ' + meta : ''));
+    });
+    out.push('');
   }
 
   const projects = state.projects.filter((item) => item.name);

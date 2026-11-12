@@ -117,6 +117,24 @@ export function buildDocx(state: ResumeState): Blob {
     });
   }
 
+  const certs = state.certifications.filter((item) => item.name);
+  if (s.sections.certifications && certs.length) {
+    blocks.push(heading('Certifications'));
+    certs.forEach((item) => {
+      blocks.push(
+        paragraph(
+          [
+            { text: item.name, bold: true, size: 10 },
+            ...(item.date ? [{ text: '   ' + item.date, size: 8.5, color: '5A6257' }] : [])
+          ],
+          { after: 20, keepNext: true }
+        )
+      );
+      const meta = [item.issuer, item.expires ? 'expires ' + item.expires : ''].filter(Boolean).join('  |  ');
+      blocks.push(textParagraph(meta, { italic: true, size: 8.5, color: '5A6257', after: 80 }));
+    });
+  }
+
   const projects = state.projects.filter((item) => item.name);
   if (s.sections.projects && projects.length) {
     blocks.push(heading('Projects'));

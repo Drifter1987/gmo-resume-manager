@@ -9,6 +9,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.2.0',
+    name: 'Certifications get their own section',
+    summary: 'Licences and certificates are no longer squeezed into the skills list.',
+    notes: [
+      'New Certifications tab with name, issuer, issue date, expiry and credential link per entry.',
+      'The resume shows them as a compact list under Education, so a long certificate list stays readable.',
+      'Certifications are included in PDF, DOCX, Markdown and TXT exports, and imported from all of them.',
+      'Settings gained a switch to hide the Certifications section.'
+    ]
+  },
+  {
     version: '2.1.1',
     name: 'One-line title',
     summary: 'The app title stays on one row, and Markdown import keeps multi-paragraph summaries.',

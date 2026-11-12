@@ -104,6 +104,17 @@ const COLLECTIONS = {
       details: ''
     })
   },
+  certifications: {
+    noun: 'certification',
+    make: () => ({
+      id: uid(),
+      name: '',
+      issuer: '',
+      date: '',
+      expires: '',
+      link: ''
+    })
+  },
   projects: {
     noun: 'project',
     make: () => ({
@@ -133,7 +144,7 @@ function defaultSettings() {
     density: 'comfortable',
     showSummary: true,
     showTags: true,
-    sections: { experience: true, education: true, projects: true, skills: true }
+    sections: { experience: true, education: true, certifications: true, projects: true, skills: true }
   };
 }
 
@@ -151,6 +162,7 @@ function emptyState() {
     },
     experience: [],
     education: [],
+    certifications: [],
     projects: [],
     skills: [],
     settings: defaultSettings()
@@ -231,6 +243,10 @@ function exampleState() {
       { id: uid(), label: 'Systems', items: 'Postgres, Kafka, Redis, AWS' },
       { id: uid(), label: 'Practices', items: 'Design docs, mentoring, incident review' }
     ],
+    certifications: [
+      { id: uid(), name: 'AWS Certified Solutions Architect – Associate', issuer: 'Amazon Web Services', date: 'Mar 2023', expires: 'Mar 2026', link: '' },
+      { id: uid(), name: 'Professional Scrum Master I', issuer: 'Scrum.org', date: 'Sep 2021', expires: '', link: '' }
+    ],
     settings: defaultSettings()
   };
 }
@@ -305,7 +321,7 @@ function normalizeSettings(raw) {
   if (typeof raw.showTags === 'boolean') out.showTags = raw.showTags;
 
   if (raw.sections && typeof raw.sections === 'object') {
-    ['experience', 'education', 'projects', 'skills'].forEach((key) => {
+    ['experience', 'education', 'certifications', 'projects', 'skills'].forEach((key) => {
       if (typeof raw.sections[key] === 'boolean') out.sections[key] = raw.sections[key];
     });
   }
@@ -501,6 +517,32 @@ function educationEditor() {
     'Degrees, courses and certifications. Details are shown as bullets.',
     cards || emptyNote('No education entries yet.'),
     'education'
+  );
+}
+
+function certificationsEditor() {
+  const items = state.certifications;
+  const cards = items
+    .map((item, index) => {
+      const base = `certifications.${index}`;
+      return `<div class="card" data-card-id="${item.id}">
+        ${cardHead('certifications', item, index, items.length, item.name || 'Untitled certification')}
+        <div class="form-grid">
+          ${field('Certification', base + '.name', item.name, 'ISTQB Certified Tester', { span: 'span-2' })}
+          ${field('Issuer', base + '.issuer', item.issuer, 'ISTQB')}
+          ${field('Issued', base + '.date', item.date, 'Mar 2024')}
+          ${field('Expires', base + '.expires', item.expires, 'Leave empty if it does not', { span: 'span-2' })}
+          ${field('Credential link', base + '.link', item.link, 'https://…', { span: 'span-2' })}
+        </div>
+      </div>`;
+    })
+    .join('');
+
+  return editorShell(
+    'Certifications',
+    'Licences, certificates and badges. They appear as a compact list under Education.',
+    cards || emptyNote('No certifications yet.'),
+    'certifications'
   );
 }
 
@@ -760,6 +802,10 @@ function settingsEditor() {
         ${switchHtml('settings.sections.education', 'Show education', s.sections.education)}
       </div>
       <div class="switch-row">
+        <span>Certifications</span>
+        ${switchHtml('settings.sections.certifications', 'Show certifications', s.sections.certifications)}
+      </div>
+      <div class="switch-row">
         <span>Projects</span>
         ${switchHtml('settings.sections.projects', 'Show projects', s.sections.projects)}
       </div>
@@ -795,6 +841,7 @@ const SECTIONS = [
   { id: 'profile', label: 'Profile', group: 'main', render: profileEditor },
   { id: 'experience', label: 'Experience', group: 'main', render: experienceEditor },
   { id: 'education', label: 'Education', group: 'main', render: educationEditor },
+  { id: 'certifications', label: 'Certifications', group: 'main', render: certificationsEditor },
   { id: 'projects', label: 'Projects', group: 'main', render: projectsEditor },
   { id: 'skills', label: 'Skills', group: 'main', render: skillsEditor },
   { id: 'releases', label: 'Releases', group: 'info', render: releasesEditor },
@@ -905,6 +952,21 @@ function sectionTitle(text) {
   return `<h2 class="r-section-title">${esc(text)}</h2>`;
 }
 
+function renderCertification(item) {
+  const meta = [item.issuer, item.date, item.expires ? 'expires ' + item.expires : '']
+    .filter(Boolean)
+    .map((part) => esc(part))
+    .join(' · ');
+  const name = item.link
+    ? `<a href="${esc(/^https?:\/\//i.test(item.link) ? item.link : 'https://' + item.link)}" target="_blank" rel="noopener noreferrer">${esc(
+        item.name
+      )}</a>`
+    : esc(item.name);
+  return `<div class="r-cert"><span class="r-cert-name">${name}</span>${
+    meta ? `<span class="r-cert-meta">${meta}</span>` : ''
+  }</div>`;
+}
+
 function renderPreview() {
   const resume = document.getElementById('resume');
   const profile = state.profile;
@@ -930,6 +992,13 @@ function renderPreview() {
   const schools = state.education.filter((item) => item.school || item.degree);
   if (settings.sections.education && schools.length) {
     body.push(`<section class="r-section">${sectionTitle('Education')}${schools.map(renderEducation).join('')}</section>`);
+  }
+
+  const certs = state.certifications.filter((item) => item.name);
+  if (settings.sections.certifications && certs.length) {
+    body.push(
+      `<section class="r-section">${sectionTitle('Certifications')}${certs.map(renderCertification).join('')}</section>`
+    );
   }
 
   const projects = state.projects.filter((item) => item.name);

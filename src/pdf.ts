@@ -153,6 +153,17 @@ export function buildPdf(state: ResumeState): Blob {
     });
   }
 
+  const certs = state.certifications.filter((item) => item.name);
+  if (s.sections.certifications && certs.length) {
+    section('Certifications');
+    certs.forEach((item) => {
+      entryHead(item.name, item.date);
+      const meta = [item.issuer, item.expires ? 'expires ' + item.expires : ''].filter(Boolean).join('  |  ');
+      if (meta) paragraph(meta, 9, 'italic', MUTED, 2);
+    });
+    y += 4;
+  }
+
   const projects = state.projects.filter((item) => item.name);
   if (s.sections.projects && projects.length) {
     section('Projects');

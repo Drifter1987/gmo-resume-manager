@@ -73,12 +73,13 @@ function draft(): Draft {
     },
     experience: [],
     education: [],
+    certifications: [],
     projects: [],
     skills: []
   };
 }
 
-const SECTIONS = ['experience', 'education', 'projects', 'skills', 'summary'];
+const SECTIONS = ['experience', 'education', 'certifications', 'projects', 'skills', 'summary'];
 
 function isSectionName(value: string): string {
   const clean = value.replace(/^#+\s*/, '').trim().toLowerCase();
@@ -141,6 +142,22 @@ export function parseMarkdown(text: string): Draft {
     if (section === 'skills') {
       const match = line.match(/^-\s*\*\*(.+?):\*\*\s*(.*)$/);
       if (match) state.skills.push({ id: '', label: match[1].trim(), items: match[2].trim() });
+      return;
+    }
+
+    if (section === 'certifications') {
+      const match = line.match(/^-\s*\*\*(.+?)\*\*\s*[—–-]\s*(.*)$/) || line.match(/^-\s*\*\*(.+?)\*\*\s*$/);
+      if (match) {
+        const bits = (match[2] || '').split('·').map((part) => part.trim());
+        state.certifications.push({
+          id: '',
+          name: match[1].trim(),
+          issuer: bits[0] || '',
+          date: bits[1] || '',
+          expires: (bits[2] || '').replace(/^expires\s*/i, ''),
+          link: ''
+        });
+      }
       return;
     }
 
@@ -241,6 +258,21 @@ export function parsePlainText(text: string): Draft {
     if (section === 'skills') {
       const match = line.match(/^(.+?):\s*(.*)$/);
       if (match) state.skills.push({ id: '', label: match[1].trim(), items: match[2].trim() });
+      return;
+    }
+
+    if (section === 'certifications') {
+      if (line.startsWith('- ')) {
+        const bits = line.slice(2).split('|').map((part) => part.trim());
+        state.certifications.push({
+          id: '',
+          name: bits[0] || '',
+          issuer: bits[1] || '',
+          date: bits[2] || '',
+          expires: (bits[3] || '').replace(/^expires\s*/i, ''),
+          link: ''
+        });
+      }
       return;
     }
 

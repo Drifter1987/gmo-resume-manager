@@ -838,6 +838,21 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .r-skill-label { font-size: 12.5px; font-weight: 650; color: var(--paper-gold); }
 
+.r-cert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1px 12px;
+  padding: 3px 0;
+  break-inside: avoid;
+  border-bottom: 1px dotted var(--paper-line);
+}
+
+.r-cert:last-child { border-bottom: 0; }
+.r-cert-name { font-size: 12.5px; font-weight: 650; }
+.r-cert-meta { font-size: 11.5px; color: var(--paper-muted); }
+
 .resume a { color: inherit; }
 
 .resume-empty {

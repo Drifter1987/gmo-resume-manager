@@ -46,6 +46,15 @@ export interface SkillGroup {
   items: string;
 }
 
+export interface CertificationItem {
+  id: string;
+  name: string;
+  issuer: string;
+  date: string;
+  expires: string;
+  link: string;
+}
+
 export interface Settings {
   theme: 'dark' | 'light';
   font: 'sans' | 'serif';
@@ -55,6 +64,7 @@ export interface Settings {
   sections: {
     experience: boolean;
     education: boolean;
+    certifications: boolean;
     projects: boolean;
     skills: boolean;
   };
@@ -64,6 +74,7 @@ export interface ResumeState {
   profile: Profile;
   experience: ExperienceItem[];
   education: EducationItem[];
+  certifications: CertificationItem[];
   projects: ProjectItem[];
   skills: SkillGroup[];
   settings: Settings;

@@ -16,7 +16,9 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 - **Profile** — name, headline, contact details and a short summary.
 - **Experience** — roles with dates, a "still work here" toggle, one-line-per-bullet
   highlights and tags.
-- **Education**, **Projects**, **Skills** — repeatable, reorderable entries.
+- **Education**, **Certifications**, **Projects**, **Skills** — repeatable, reorderable entries.
+  Certifications carry issuer, issue date, expiry and a credential link, and render as a compact
+  list under Education.
 - **Live preview** — updates on every keystroke and every settings change.
 - **Export** — a separate tab with PDF, DOCX, TXT, Markdown and JSON, plus drag-and-drop
   import.
