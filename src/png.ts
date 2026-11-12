@@ -38,7 +38,7 @@ export async function buildPngPages(state: ResumeState): Promise<Blob[]> {
   };
 
   const ensure = async (height: number) => {
-    if (y + height <= PAGE_H - MARGIN) return;
+    if (y + height <= PAGE_H - MARGIN - 12) return;
     await flush();
     blank();
   };
@@ -101,16 +101,23 @@ export async function buildPngPages(state: ResumeState): Promise<Blob[]> {
 
   const entryHead = async (title: string, dates: string) => {
     await ensure(42);
+    let dateWidth = 0;
     if (dates) {
       font(400, 19);
       ctx.fillStyle = MUTED;
-      const width = ctx.measureText(dates).width;
-      ctx.fillText(dates, PAGE_W - MARGIN - width, y);
+      dateWidth = ctx.measureText(dates).width + 18;
+      ctx.fillText(dates, PAGE_W - MARGIN - (dateWidth - 18), y);
     }
     font(700, 22);
     ctx.fillStyle = INK;
-    ctx.fillText(title, MARGIN, y);
+    const lines = wrap(title, PAGE_W - MARGIN * 2 - dateWidth);
+    ctx.fillText(lines[0] || '', MARGIN, y);
     y += 30;
+    for (let i = 1; i < lines.length; i += 1) {
+      await ensure(32);
+      ctx.fillText(lines[i], MARGIN, y);
+      y += 30;
+    }
   };
 
   const bullet = async (text: string) => {

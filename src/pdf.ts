@@ -17,7 +17,7 @@ export function buildPdf(state: ResumeState): Blob {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const contentWidth = pageWidth - MARGIN * 2;
-  const bottom = pageHeight - MARGIN;
+  const bottom = pageHeight - MARGIN - 10;
 
   let y = MARGIN + 12;
 
@@ -69,14 +69,17 @@ export function buildPdf(state: ResumeState): Blob {
 
   const entryHead = (title: string, dates: string) => {
     ensure(17);
+    let dateWidth = 0;
     if (dates) {
       font('normal', 8.5);
+      dateWidth = doc.getTextWidth(ascii(dates)) + 14;
       doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
       doc.text(ascii(dates), pageWidth - MARGIN, y, { align: 'right' });
     }
     font('bold', 10.5);
     doc.setTextColor(INK[0], INK[1], INK[2]);
-    const titleLines = doc.splitTextToSize(ascii(title), contentWidth - 130) as string[];
+    const titleWidth = Math.max(contentWidth - dateWidth, 140);
+    const titleLines = doc.splitTextToSize(ascii(title), titleWidth) as string[];
     doc.text(titleLines[0] || '', MARGIN, y);
     y += 13;
     titleLines.slice(1).forEach((line) => {

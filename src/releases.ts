@@ -9,6 +9,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.5.1',
+    name: 'Calmer colours, clean page breaks',
+    summary: 'A warmer sage palette, and PDF/PNG entries no longer collide with their dates or run past the page.',
+    notes: [
+      'The bright glowing green is gone; surfaces, accents and the backdrop use a warm sage and amber palette that is easier on the eyes.',
+      'PDF and PNG entry headings now measure the date before wrapping the title, so a long certificate or role name can no longer overlap the date.',
+      'Both writers keep a safety margin at the foot of the page, so nothing is drawn past the last line.',
+      'The build is published into the repository and the root page forwards to it, so the site no longer depends on the Pages source setting.'
+    ]
+  },
+  {
     version: '2.5.0',
     name: 'One export sheet, a left rail, images',
     summary: 'Multi-format export with PNG pages and sharing, a left-hand section rail on desktop, and no duplicated controls.',

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-const GREEN = 0x3ddc84;
-const GOLD = 0xffb547;
+const GREEN = 0x8fbf9f;
+const GOLD = 0xdab06b;
 const POINT_COUNT = 720;
 
 export type StopBackground = () => void;
