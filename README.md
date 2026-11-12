@@ -10,9 +10,9 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 ## What it does
 
 - **Section tabs at the top** — Profile, Experience, Education (with Certifications inside), Projects,
-  Skills, Releases (with Changelog inside), then Export and Settings on the far right.
-- **Docked bottom toolbar** — import, jump to the resume, export and settings from anywhere, plus
-  the build number.
+  Skills, History, then Export and Settings (with Release notes and Changelog inside).
+- **Docked bottom toolbar** — Save, import, jump to the resume, export and settings from anywhere,
+  plus the build number.
 - **Profile** — name, headline, contact details and a short summary.
 - **Experience** — roles with dates, a "still work here" toggle, one-line-per-bullet
   highlights and tags.
@@ -23,8 +23,9 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 - **Export** — a separate tab with PDF, DOCX, TXT, Markdown and JSON, plus drag-and-drop
   import.
 - **Settings** — dark/light theme, resume typeface (sans/serif), density, section
-  visibility, storage usage and a data reset.
-- **Release notes and changelog** — inside the app, driven by `src/releases.ts`.
+  visibility, storage usage and a data reset, plus the release notes and changelog.
+- **History** — a Save button (or Cmd/Ctrl+S) snapshots the whole resume into the browser:
+  up to 40 versions, each with restore, download and delete.
 
 ## Exports and round trips
 
@@ -50,6 +51,8 @@ another device. If the hidden block is stripped, a best-effort text parser takes
 
 Everything is written to `localStorage` as you type. The active tab and its scroll position
 are stored too, so switching sections or reloading never loses a field or your place.
+Saved versions live in a separate `localStorage` key, so the repository and the deployed site
+never hold anyone's resume — the data exists only in the browser that entered it.
 
 ## Stack
 

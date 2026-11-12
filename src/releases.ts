@@ -9,6 +9,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.4.0',
+    name: 'History of saved versions',
+    summary: 'A Save button snapshots the whole resume, and old versions can be restored, downloaded or deleted.',
+    notes: [
+      'New Save button in the dock (and Cmd/Ctrl+S) writes a snapshot of everything: profile, roles, education, certificates, projects, skills and settings.',
+      'New History tab lists up to 40 versions, newest first, with restore, download and delete.',
+      'Snapshots live only in this browser — nothing is uploaded and the GitHub copy of the app stays empty.',
+      'Release notes and Changelog moved inside Settings, so the top row is down to seven tabs.',
+      'Settings shows how many versions are stored and how much space they use, with a separate Clear history button.'
+    ]
+  },
+  {
     version: '2.3.2',
     name: 'Table polish',
     summary: 'No stray separators on stacked rows, and only real URLs become credential links.',

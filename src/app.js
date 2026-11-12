@@ -14,6 +14,8 @@ import { saveBlob } from './util';
 const STORAGE_KEY = 'gmoResumeManager.v2';
 const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
 const UI_KEY = 'gmoResumeManager.ui.v1';
+const HISTORY_KEY = 'gmoResumeManager.history.v1';
+const HISTORY_LIMIT = 40;
 
 /* -------------------------------------------------------------------- */
 /* helpers                                                              */
@@ -256,7 +258,8 @@ function exampleState() {
 /* -------------------------------------------------------------------- */
 
 let state = emptyState();
-let ui = { section: 'profile', scrolls: {}, pageY: 0, sub: { education: 'education', releases: 'notes' } };
+let ui = { section: 'profile', scrolls: {}, pageY: 0, sub: { education: 'education', settings: 'settings' } };
+let history = [];
 let saveTimer = null;
 let hintTimer = null;
 let toastTimer = null;
@@ -475,8 +478,8 @@ function loadUi() {
       if (parsed.sub.education === 'certifications' || parsed.sub.education === 'education') {
         ui.sub.education = parsed.sub.education;
       }
-      if (parsed.sub.releases === 'changelog' || parsed.sub.releases === 'notes') {
-        ui.sub.releases = parsed.sub.releases;
+      if (parsed.sub.settings === 'settings' || parsed.sub.settings === 'releases' || parsed.sub.settings === 'changelog') {
+        ui.sub.settings = parsed.sub.settings;
       }
     }
   } catch (error) {
@@ -496,6 +499,101 @@ function saveUi() {
 function scheduleUiSave() {
   clearTimeout(uiTimer);
   uiTimer = setTimeout(saveUi, 300);
+}
+
+/* --- history of saved versions, kept only in this browser --- */
+
+function loadHistory() {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry) => entry && typeof entry === 'object' && entry.state);
+  } catch (error) {
+    return [];
+  }
+}
+
+function persistHistory() {
+  try {
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    return true;
+  } catch (error) {
+    toast('Could not save the snapshot — storage is full', true);
+    return false;
+  }
+}
+
+function formatWhen(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function saveSnapshot() {
+  const entry = {
+    id: uid(),
+    savedAt: new Date().toISOString(),
+    state: JSON.parse(JSON.stringify(state))
+  };
+
+  history.unshift(entry);
+  if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT;
+  if (!persistHistory()) return;
+
+  toast('Saved to history');
+  showHint('Snapshot saved');
+  if (ui.section === 'history') renderEditor();
+  else if (ui.section === 'settings') renderEditor();
+}
+
+function restoreSnapshot(id) {
+  const entry = history.find((item) => item.id === id);
+  if (!entry) return;
+  if (!window.confirm('Replace the resume with this saved version?')) return;
+
+  state = normalize(JSON.parse(JSON.stringify(entry.state)));
+  applyAppearance();
+  renderTabs();
+  renderEditor();
+  renderPreview();
+  save();
+  flushSave();
+  toast('Restored the version from ' + formatWhen(entry.savedAt));
+}
+
+function deleteSnapshot(id) {
+  const entry = history.find((item) => item.id === id);
+  if (!entry) return;
+  if (!window.confirm('Delete this saved version?')) return;
+  history = history.filter((item) => item.id !== id);
+  persistHistory();
+  renderEditor();
+  toast('Version deleted');
+}
+
+async function downloadSnapshot(id) {
+  const entry = history.find((item) => item.id === id);
+  if (!entry) return;
+  const profile = entry.state.profile || {};
+  const stamp = String(entry.savedAt || '').slice(0, 10);
+  const name = slugify(profile.name || 'resume') + '-resume-' + stamp + '.json';
+  try {
+    const blob = new Blob([toJson(entry.state)], { type: 'application/json' });
+    const result = await saveBlob(blob, name);
+    if (result === 'downloaded') toast('Snapshot saved');
+    else if (result === 'opened') showExportSheet(blob, name, 'json');
+  } catch (error) {
+    console.error(error);
+    toast('Could not write that snapshot', true);
+  }
 }
 
 function setPath(target, path, value) {
@@ -684,16 +782,63 @@ function educationHub() {
   `;
 }
 
-function releasesHub() {
-  const sub = ui.sub && ui.sub.releases === 'changelog' ? 'changelog' : 'notes';
+function settingsHub() {
+  const sub = ui.sub && ui.sub.settings ? ui.sub.settings : 'settings';
   return `
-    <div class="subtabs" role="tablist" aria-label="Release notes and changelog">
-      <button class="subtab${sub === 'notes' ? ' is-active' : ''}" type="button" role="tab"
-        aria-selected="${sub === 'notes'}" data-subtab="releases" data-value="notes">Release notes</button>
+    <div class="subtabs" role="tablist" aria-label="Settings, release notes and changelog">
+      <button class="subtab${sub === 'settings' ? ' is-active' : ''}" type="button" role="tab"
+        aria-selected="${sub === 'settings'}" data-subtab="settings" data-value="settings">Settings</button>
+      <button class="subtab${sub === 'releases' ? ' is-active' : ''}" type="button" role="tab"
+        aria-selected="${sub === 'releases'}" data-subtab="settings" data-value="releases">Release notes</button>
       <button class="subtab${sub === 'changelog' ? ' is-active' : ''}" type="button" role="tab"
-        aria-selected="${sub === 'changelog'}" data-subtab="releases" data-value="changelog">Changelog</button>
+        aria-selected="${sub === 'changelog'}" data-subtab="settings" data-value="changelog">Changelog</button>
     </div>
-    ${sub === 'changelog' ? changelogEditor() : releasesEditor()}
+    ${sub === 'releases' ? releasesEditor() : sub === 'changelog' ? changelogEditor() : settingsEditor()}
+  `;
+}
+
+function historyRow(entry) {
+  const saved = entry.state || {};
+  const profile = saved.profile || {};
+  const roles = (saved.experience || []).length;
+  const certs = (saved.certifications || []).length;
+  const groups = (saved.skills || []).length;
+  const meta = [profile.headline, roles ? roles + (roles === 1 ? ' role' : ' roles') : '', certs ? certs + ' cert.' : '', groups ? groups + ' skill groups' : '']
+    .filter(Boolean)
+    .map((part) => esc(part))
+    .join(' · ');
+
+  return `<article class="history-item">
+    <div class="history-head">
+      <span class="history-when">${esc(formatWhen(entry.savedAt))}</span>
+    </div>
+    <p class="history-name">${esc(profile.name || 'Untitled résumé')}</p>
+    ${meta ? `<p class="history-meta">${meta}</p>` : ''}
+    <div class="history-actions">
+      <button class="btn btn-sm" type="button" data-action="restore" data-id="${entry.id}">Restore</button>
+      <button class="btn btn-sm" type="button" data-action="download-snapshot" data-id="${entry.id}">Download</button>
+      <button class="btn btn-sm btn-danger" type="button" data-action="delete-snapshot" data-id="${entry.id}">Delete</button>
+    </div>
+  </article>`;
+}
+
+function historyEditor() {
+  return `
+    <div class="panel-head">
+      <h2>History</h2>
+      <p class="panel-sub">Snapshots of the whole resume — profile, roles, education, certificates, projects,
+      skills and settings — stored in this browser only. ${history.length
+        ? history.length + (history.length === 1 ? ' version saved.' : ' versions saved.')
+        : 'Nothing saved yet.'}</p>
+    </div>
+    <button class="btn btn-primary btn-block" type="button" data-action="save">Save current version</button>
+    ${
+      history.length
+        ? `<div class="history-list">${history.map(historyRow).join('')}</div>`
+        : emptyNote('No saved versions yet. Press Save to snapshot everything as it is now.')
+    }
+    <p class="fineprint">Up to 40 versions are kept, newest first. Restoring a version replaces what is in the
+    editor — save the current state first if you might want it back.</p>
   `;
 }
 
@@ -975,6 +1120,10 @@ function settingsEditor() {
         <span class="mono">${esc(storageUsage())}</span>
       </div>
       <div class="data-row">
+        <span>Saved versions</span>
+        <span class="mono">${history.length}</span>
+      </div>
+      <div class="data-row">
         <span>Version</span>
         <span class="mono">${esc(APP_VERSION)}</span>
       </div>
@@ -984,6 +1133,7 @@ function settingsEditor() {
       </div>
       <div class="danger-zone">
         <button class="btn btn-danger" type="button" data-action="reset">Clear all data</button>
+        <button class="btn btn-danger" type="button" data-action="clear-history">Clear history</button>
       </div>
     </section>
   `;
@@ -995,9 +1145,9 @@ const SECTIONS = [
   { id: 'education', label: 'Education', group: 'main', render: educationHub },
   { id: 'projects', label: 'Projects', group: 'main', render: projectsEditor },
   { id: 'skills', label: 'Skills', group: 'main', render: skillsEditor },
-  { id: 'releases', label: 'Releases', group: 'info', render: releasesHub },
+  { id: 'history', label: 'History', group: 'main', render: historyEditor },
   { id: 'export', label: 'Export', group: 'tool', render: exportEditor },
-  { id: 'settings', label: 'Settings', group: 'utility', render: settingsEditor }
+  { id: 'settings', label: 'Settings', group: 'utility', render: settingsHub }
 ];
 
 function renderTabs() {
@@ -1295,6 +1445,35 @@ function loadExample() {
 }
 
 function handleAction(action, button) {
+  if (action === 'save') {
+    saveSnapshot();
+    return;
+  }
+
+  if (action === 'restore') {
+    restoreSnapshot(button.dataset.id);
+    return;
+  }
+
+  if (action === 'delete-snapshot') {
+    deleteSnapshot(button.dataset.id);
+    return;
+  }
+
+  if (action === 'download-snapshot') {
+    downloadSnapshot(button.dataset.id);
+    return;
+  }
+
+  if (action === 'clear-history') {
+    if (!window.confirm('Delete every saved version in the history?')) return;
+    history = [];
+    persistHistory();
+    renderEditor();
+    toast('History cleared');
+    return;
+  }
+
   if (action === 'import') {
     document.getElementById('file-input').click();
     return;
@@ -1388,7 +1567,9 @@ function goTo(id) {
 
 function storageUsage() {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY) || '';
+    const raw =
+      (window.localStorage.getItem(STORAGE_KEY) || '') +
+      (window.localStorage.getItem(HISTORY_KEY) || '');
     const kb = Math.max(1, Math.round(raw.length / 1024));
     return 'about ' + kb + ' KB';
   } catch (error) {
@@ -1498,7 +1679,8 @@ function onDockClick(event) {
   if (!button) return;
 
   const action = button.dataset.dock;
-  if (action === 'import') document.getElementById('file-input').click();
+  if (action === 'save') saveSnapshot();
+  else if (action === 'import') document.getElementById('file-input').click();
   else if (action === 'example') loadExample();
   else if (action === 'export') goTo('export');
   else if (action === 'settings') goTo('settings');
@@ -1580,6 +1762,13 @@ function bindEvents() {
     saveUi();
   });
 
+  document.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      saveSnapshot();
+    }
+  });
+
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       flushSave();
@@ -1594,6 +1783,7 @@ function bindEvents() {
 
 function init() {
   state = loadState();
+  history = loadHistory();
   loadUi();
 
   if (!SECTIONS.some((section) => section.id === ui.section)) ui.section = 'profile';
