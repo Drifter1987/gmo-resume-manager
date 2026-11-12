@@ -146,6 +146,27 @@ export function parseMarkdown(text: string): Draft {
     }
 
     if (section === 'certifications') {
+      if (line.startsWith('|')) {
+        const cells = line
+          .replace(/^\|/, '')
+          .replace(/\|$/, '')
+          .split('|')
+          .map((cell) => cell.trim());
+        if (cells.every((cell) => cell === '' || /^:?-{2,}:?$/.test(cell))) return;
+        if (/^(certification|certificate|name|#)$/i.test(cells[0] || '')) return;
+        if (cells[0]) {
+          state.certifications.push({
+            id: '',
+            name: cells[0],
+            issuer: cells[1] || '',
+            date: cells[2] || '',
+            expires: (cells[3] || '').replace(/^[—–-]+$/, '').replace(/^expires\s*/i, ''),
+            link: cells[4] || ''
+          });
+        }
+        return;
+      }
+
       const match = line.match(/^-\s*\*\*(.+?)\*\*\s*[—–-]\s*(.*)$/) || line.match(/^-\s*\*\*(.+?)\*\*\s*$/);
       if (match) {
         const bits = (match[2] || '').split('·').map((part) => part.trim());

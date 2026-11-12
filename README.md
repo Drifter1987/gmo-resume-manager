@@ -9,16 +9,16 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 
 ## What it does
 
-- **Section tabs at the top** — Profile and Experience first, then Education, Projects,
-  Skills, Releases and Changelog, with Export and Settings on the far right.
-- **Docked bottom toolbar** — import, sample data, export and settings from anywhere, plus
+- **Section tabs at the top** — Profile, Experience, Education (with Certifications inside), Projects,
+  Skills, Releases (with Changelog inside), then Export and Settings on the far right.
+- **Docked bottom toolbar** — import, jump to the resume, export and settings from anywhere, plus
   the build number.
 - **Profile** — name, headline, contact details and a short summary.
 - **Experience** — roles with dates, a "still work here" toggle, one-line-per-bullet
   highlights and tags.
 - **Education**, **Certifications**, **Projects**, **Skills** — repeatable, reorderable entries.
-  Certifications carry issuer, issue date, expiry and a credential link, and render as a compact
-  list under Education.
+  Certifications carry issuer, issue date, expiry and a credential link, and render on the resume
+  as a four-column table under Education.
 - **Live preview** — updates on every keystroke and every settings change.
 - **Export** — a separate tab with PDF, DOCX, TXT, Markdown and JSON, plus drag-and-drop
   import.

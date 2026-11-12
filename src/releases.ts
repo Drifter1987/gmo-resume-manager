@@ -9,6 +9,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.3.0',
+    name: 'Fewer tabs, a real table',
+    summary: 'Related sections now share a tab, and certifications render as a proper table.',
+    notes: [
+      'Education and Certifications live in one tab with a switch between them; Releases and Changelog do the same.',
+      'Certifications render as a four-column table — certification, issuer, issued, expires — instead of a wrapped list.',
+      'Markdown tables under a Certifications heading are imported row by row.',
+      'The dock is down to four buttons; the sample resume now lives in the Export tab.'
+    ]
+  },
+  {
     version: '2.2.0',
     name: 'Certifications get their own section',
     summary: 'Licences and certificates are no longer squeezed into the skills list.',

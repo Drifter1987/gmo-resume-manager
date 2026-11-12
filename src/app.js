@@ -256,7 +256,7 @@ function exampleState() {
 /* -------------------------------------------------------------------- */
 
 let state = emptyState();
-let ui = { section: 'profile', scrolls: {}, pageY: 0 };
+let ui = { section: 'profile', scrolls: {}, pageY: 0, sub: { education: 'education', releases: 'notes' } };
 let saveTimer = null;
 let hintTimer = null;
 let toastTimer = null;
@@ -354,6 +354,14 @@ function loadUi() {
     if (typeof parsed.section === 'string') ui.section = parsed.section;
     if (parsed.scrolls && typeof parsed.scrolls === 'object') ui.scrolls = parsed.scrolls;
     if (typeof parsed.pageY === 'number') ui.pageY = parsed.pageY;
+    if (parsed.sub && typeof parsed.sub === 'object') {
+      if (parsed.sub.education === 'certifications' || parsed.sub.education === 'education') {
+        ui.sub.education = parsed.sub.education;
+      }
+      if (parsed.sub.releases === 'changelog' || parsed.sub.releases === 'notes') {
+        ui.sub.releases = parsed.sub.releases;
+      }
+    }
   } catch (error) {
     /* ignore a corrupt UI record */
   }
@@ -540,10 +548,36 @@ function certificationsEditor() {
 
   return editorShell(
     'Certifications',
-    'Licences, certificates and badges. They appear as a compact list under Education.',
+    'Licences, certificates and badges. They render as a table on the resume, under Education.',
     cards || emptyNote('No certifications yet.'),
     'certifications'
   );
+}
+
+function educationHub() {
+  const sub = ui.sub && ui.sub.education === 'certifications' ? 'certifications' : 'education';
+  return `
+    <div class="subtabs" role="tablist" aria-label="Education and certifications">
+      <button class="subtab${sub === 'education' ? ' is-active' : ''}" type="button" role="tab"
+        aria-selected="${sub === 'education'}" data-subtab="education" data-value="education">Education</button>
+      <button class="subtab${sub === 'certifications' ? ' is-active' : ''}" type="button" role="tab"
+        aria-selected="${sub === 'certifications'}" data-subtab="education" data-value="certifications">Certifications</button>
+    </div>
+    ${sub === 'certifications' ? certificationsEditor() : educationEditor()}
+  `;
+}
+
+function releasesHub() {
+  const sub = ui.sub && ui.sub.releases === 'changelog' ? 'changelog' : 'notes';
+  return `
+    <div class="subtabs" role="tablist" aria-label="Release notes and changelog">
+      <button class="subtab${sub === 'notes' ? ' is-active' : ''}" type="button" role="tab"
+        aria-selected="${sub === 'notes'}" data-subtab="releases" data-value="notes">Release notes</button>
+      <button class="subtab${sub === 'changelog' ? ' is-active' : ''}" type="button" role="tab"
+        aria-selected="${sub === 'changelog'}" data-subtab="releases" data-value="changelog">Changelog</button>
+    </div>
+    ${sub === 'changelog' ? changelogEditor() : releasesEditor()}
+  `;
 }
 
 function projectsEditor() {
@@ -725,6 +759,7 @@ function exportEditor() {
       <strong>Drop a resume file here</strong>
       <span>.json, .md or .txt</span>
       <button class="btn" type="button" data-action="import">Choose a file</button>
+      <button class="btn" type="button" data-action="sample">Load the sample resume</button>
     </div>
 
     <p class="fineprint">Markdown and TXT exports include a small hidden copy of the data, which is what makes
@@ -840,12 +875,10 @@ function settingsEditor() {
 const SECTIONS = [
   { id: 'profile', label: 'Profile', group: 'main', render: profileEditor },
   { id: 'experience', label: 'Experience', group: 'main', render: experienceEditor },
-  { id: 'education', label: 'Education', group: 'main', render: educationEditor },
-  { id: 'certifications', label: 'Certifications', group: 'main', render: certificationsEditor },
+  { id: 'education', label: 'Education', group: 'main', render: educationHub },
   { id: 'projects', label: 'Projects', group: 'main', render: projectsEditor },
   { id: 'skills', label: 'Skills', group: 'main', render: skillsEditor },
-  { id: 'releases', label: 'Releases', group: 'info', render: releasesEditor },
-  { id: 'changelog', label: 'Changelog', group: 'info', render: changelogEditor },
+  { id: 'releases', label: 'Releases', group: 'info', render: releasesHub },
   { id: 'export', label: 'Export', group: 'tool', render: exportEditor },
   { id: 'settings', label: 'Settings', group: 'utility', render: settingsEditor }
 ];
@@ -952,19 +985,37 @@ function sectionTitle(text) {
   return `<h2 class="r-section-title">${esc(text)}</h2>`;
 }
 
-function renderCertification(item) {
-  const meta = [item.issuer, item.date, item.expires ? 'expires ' + item.expires : '']
-    .filter(Boolean)
-    .map((part) => esc(part))
-    .join(' · ');
-  const name = item.link
-    ? `<a href="${esc(/^https?:\/\//i.test(item.link) ? item.link : 'https://' + item.link)}" target="_blank" rel="noopener noreferrer">${esc(
-        item.name
-      )}</a>`
-    : esc(item.name);
-  return `<div class="r-cert"><span class="r-cert-name">${name}</span>${
-    meta ? `<span class="r-cert-meta">${meta}</span>` : ''
-  }</div>`;
+function renderCertifications(items) {
+  const rows = items
+    .map((item) => {
+      const name = item.link
+        ? `<a href="${esc(/^https?:\/\//i.test(item.link) ? item.link : 'https://' + item.link)}" target="_blank" rel="noopener noreferrer">${esc(
+            item.name
+          )}</a>`
+        : esc(item.name);
+      return `<tr>
+        <td class="r-cert-name">${name}</td>
+        <td>${esc(item.issuer || '')}</td>
+        <td class="r-cert-date">${esc(item.date || '')}</td>
+        <td class="r-cert-date">${esc(item.expires || '')}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<div class="r-table-wrap">
+    <table class="r-table r-table-certs">
+      <colgroup>
+        <col class="col-name" />
+        <col class="col-issuer" />
+        <col class="col-date" />
+        <col class="col-date" />
+      </colgroup>
+      <thead>
+        <tr><th>Certification</th><th>Issuer</th><th>Issued</th><th>Expires</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
 }
 
 function renderPreview() {
@@ -996,9 +1047,7 @@ function renderPreview() {
 
   const certs = state.certifications.filter((item) => item.name);
   if (settings.sections.certifications && certs.length) {
-    body.push(
-      `<section class="r-section">${sectionTitle('Certifications')}${certs.map(renderCertification).join('')}</section>`
-    );
+    body.push(`<section class="r-section">${sectionTitle('Certifications')}${renderCertifications(certs)}</section>`);
   }
 
   const projects = state.projects.filter((item) => item.name);
@@ -1131,6 +1180,11 @@ function loadExample() {
 function handleAction(action, button) {
   if (action === 'import') {
     document.getElementById('file-input').click();
+    return;
+  }
+
+  if (action === 'sample') {
+    loadExample();
     return;
   }
 
@@ -1289,6 +1343,15 @@ function onPanelInput(event) {
 }
 
 function onPanelClick(event) {
+  const subButton = event.target.closest('[data-subtab]');
+  if (subButton) {
+    if (!ui.sub) ui.sub = { education: 'education', releases: 'notes' };
+    ui.sub[subButton.dataset.subtab] = subButton.dataset.value;
+    saveUi();
+    renderEditor();
+    return;
+  }
+
   const copyButton = event.target.closest('[data-copy]');
   if (copyButton) {
     copyText(copyButton.dataset.copy);
