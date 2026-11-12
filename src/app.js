@@ -307,7 +307,105 @@ function normalize(data) {
   });
 
   base.settings = normalizeSettings(source.settings);
+  repairImportedContent(base);
   return base;
+}
+
+const TABLE_SEPARATOR = /^:?-{2,}:?$/;
+
+function cleanCell(value) {
+  return String(value || '')
+    .replace(/\*\*/g, '')
+    .replace(/\[(.+?)\]\((.+?)\)/g, '$1')
+    .trim();
+}
+
+function parseTableRows(lines) {
+  if (!lines.length) return [];
+  const cells = lines.map((line) =>
+    line
+      .replace(/^\s*\|/, '')
+      .replace(/\|\s*$/, '')
+      .split('|')
+      .map((cell) => cell.trim())
+  );
+
+  const separatorAt = cells.findIndex((row) => row.every((cell) => cell === '' || TABLE_SEPARATOR.test(cell)));
+  if (separatorAt === -1) return [];
+
+  const header = separatorAt > 0 ? cells[separatorAt - 1] : [];
+  const body = cells.slice(separatorAt + 1);
+  const lower = header.map((cell) => cell.toLowerCase());
+
+  const pick = (patterns, fallback) => {
+    for (let i = 0; i < lower.length; i += 1) {
+      if (patterns.some((pattern) => pattern.test(lower[i]))) return i;
+    }
+    return fallback;
+  };
+
+  const nameAt = pick([/^certif/, /^name$/, /^title$/], 1);
+  const issuerAt = pick([/^issuer$/, /^issuing/, /^organi/, /^provider/, /^authority/], 2);
+  const dateAt = pick([/^issued$/, /^issue date$/, /^date issued$/, /^date$/], 3);
+  const expiresAt = pick([/^expire/], 4);
+  const linkAt = pick([/url$/, /^link$/], 6);
+
+  return body
+    .map((row) => ({
+      name: cleanCell(row[nameAt]),
+      issuer: cleanCell(row[issuerAt]),
+      date: cleanCell(row[dateAt]),
+      expires: cleanCell(row[expiresAt]).replace(/^[—–-]+$/, ''),
+      link: cleanCell(row[linkAt])
+    }))
+    .filter((row) => row.name && row.name !== '#' && !TABLE_SEPARATOR.test(row.name));
+}
+
+/**
+ * Repairs state that was imported from a document rather than a resume: a reference
+ * heading used as the name, and a Markdown table dumped into the summary. The table
+ * rows become certifications, so nothing is lost.
+ */
+function repairImportedContent(base) {
+  const name = base.profile.name || '';
+  if (name.length > 40 && /certifications|credentials|reference/i.test(name)) {
+    const head = name.split(/\s+[—–-]\s+/)[0].trim();
+    if (head) base.profile.name = head;
+  }
+
+  const summary = base.profile.summary || '';
+  if (summary.indexOf('|') === -1) return;
+
+  const lines = summary.split(/\r?\n/);
+  const tableLines = [];
+  const remaining = [];
+  let inTable = false;
+
+  lines.forEach((line) => {
+    if (/^\s*\|/.test(line)) {
+      inTable = true;
+      tableLines.push(line);
+      return;
+    }
+    if (inTable) {
+      inTable = false;
+      if (line.trim() === '') return;
+    }
+    remaining.push(line);
+  });
+
+  const rows = parseTableRows(tableLines);
+  if (!rows.length) {
+    base.profile.summary = remaining.join('\n').trim();
+    return;
+  }
+
+  rows.forEach((row) => {
+    base.certifications.push({ id: uid(), ...row });
+  });
+
+  // The source was a reference sheet, not a summary.
+  base.profile.summary = rows.length >= 3 ? '' : remaining.join('\n').trim();
 }
 
 function normalizeSettings(raw) {

@@ -778,6 +778,7 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
   letter-spacing: -0.02em;
   line-height: 1.12;
   color: #10231a;
+  overflow-wrap: anywhere;
 }
 
 .r-headline { margin: 6px 0 0; font-size: 14px; color: #7a4c00; }
@@ -827,7 +828,7 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .r-tags { margin: 7px 0 0; font-size: 12px; color: var(--paper-muted); }
 
-.r-summary { margin: 0; }
+.r-summary { margin: 0; overflow-wrap: anywhere; }
 
 .r-skill {
   display: grid;
@@ -906,6 +907,32 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .r-cert-name { font-weight: 650; }
 .r-cert-date { color: var(--paper-muted); white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .r-table-wrap { overflow-x: visible; }
+  .r-table { min-width: 0; }
+  .r-table colgroup,
+  .r-table thead { display: none; }
+  .r-table tr {
+    display: block;
+    padding: 5px 0;
+    border-bottom: 1px dotted var(--paper-line);
+  }
+  .r-table tr:last-child { border-bottom: 0; }
+  .r-table td {
+    display: inline;
+    padding: 0;
+    border: 0;
+  }
+  .r-table td:empty { display: none; }
+  .r-table td + td::before { content: " · "; color: #a9a495; }
+  .r-table td.r-cert-name {
+    display: block;
+    font-weight: 650;
+    margin-bottom: 1px;
+  }
+  .r-table td.r-cert-date { white-space: normal; }
+}
 
 .resume a { color: inherit; }
 

@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.3.1',
+    name: 'Repair a table that was imported as text',
+    summary: 'A Markdown table imported into a summary is turned into certifications, and long text can no longer spill off the paper.',
+    notes: [
+      'Loading repairs data that came from a reference document: the heading is trimmed back to the name, and a Markdown table found in the summary becomes certification rows.',
+      'Certifications stack into a readable list on narrow screens instead of scrolling sideways.',
+      'Long URLs, hashes and titles now wrap inside the paper instead of running past its edge.'
+    ]
+  },
+  {
     version: '2.3.0',
     name: 'Fewer tabs, a real table',
     summary: 'Related sections now share a tab, and certifications render as a proper table.',
