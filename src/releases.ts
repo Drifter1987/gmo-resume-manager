@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.4.1',
+    name: 'Release notes look right again',
+    summary: 'Restored the card styling for release notes and the changelog, and stopped sub-tab labels wrapping.',
+    notes: [
+      'Release notes show their version chip, title, summary and bullet list as proper cards again.',
+      'Changelog entries are grouped with a rule, version label and entry title on separate lines.',
+      'Sub-tab labels stay on one line and the strip scrolls sideways when it has to.'
+    ]
+  },
+  {
     version: '2.4.0',
     name: 'History of saved versions',
     summary: 'A Save button snapshots the whole resume, and old versions can be restored, downloaded or deleted.',
