@@ -161,7 +161,7 @@ export function parseMarkdown(text: string): Draft {
             issuer: cells[1] || '',
             date: cells[2] || '',
             expires: (cells[3] || '').replace(/^[—–-]+$/, '').replace(/^expires\s*/i, ''),
-            link: cells[4] || ''
+            link: /^https?:\/\/[^\s.]+\.[^\s]+$/i.test(cells[4] || '') ? cells[4] : ''
           });
         }
         return;

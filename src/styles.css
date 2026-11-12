@@ -926,6 +926,7 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
   }
   .r-table td:empty { display: none; }
   .r-table td + td::before { content: " · "; color: #a9a495; }
+  .r-table td.r-cert-name + td::before { content: none; }
   .r-table td.r-cert-name {
     display: block;
     font-weight: 650;

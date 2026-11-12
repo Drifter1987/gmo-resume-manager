@@ -320,6 +320,20 @@ function cleanCell(value) {
     .trim();
 }
 
+function validLink(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(raw)) return raw;
+  if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(raw)) return raw;
+  return '';
+}
+
+function normaliseLink(value) {
+  const raw = validLink(value);
+  if (!raw) return '';
+  return /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+}
+
 function parseTableRows(lines) {
   if (!lines.length) return [];
   const cells = lines.map((line) =>
@@ -356,7 +370,7 @@ function parseTableRows(lines) {
       issuer: cleanCell(row[issuerAt]),
       date: cleanCell(row[dateAt]),
       expires: cleanCell(row[expiresAt]).replace(/^[—–-]+$/, ''),
-      link: cleanCell(row[linkAt])
+      link: normaliseLink(row[linkAt])
     }))
     .filter((row) => row.name && row.name !== '#' && !TABLE_SEPARATOR.test(row.name));
 }
@@ -367,6 +381,11 @@ function parseTableRows(lines) {
  * rows become certifications, so nothing is lost.
  */
 function repairImportedContent(base) {
+  base.certifications.forEach((item) => {
+    item.link = normaliseLink(item.link);
+    if (item.expires) item.expires = item.expires.replace(/^[—–-]+$/, '').trim();
+  });
+
   const name = base.profile.name || '';
   if (name.length > 40 && /certifications|credentials|reference/i.test(name)) {
     const head = name.split(/\s+[—–-]\s+/)[0].trim();

@@ -9,6 +9,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.3.2',
+    name: 'Table polish',
+    summary: 'No stray separators on stacked rows, and only real URLs become credential links.',
+    notes: [
+      'Stacked certificate rows no longer start their meta line with a lone separator.',
+      'Placeholder text in a credential column (a dash, "image certificate") is dropped instead of becoming a broken link.'
+    ]
+  },
+  {
     version: '2.3.1',
     name: 'Repair a table that was imported as text',
     summary: 'A Markdown table imported into a summary is turned into certifications, and long text can no longer spill off the paper.',
