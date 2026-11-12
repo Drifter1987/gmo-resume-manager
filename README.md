@@ -89,7 +89,8 @@ overridable with the `BUILD_NUMBER` environment variable).
 - `src/app.js` — state, persistence, editor and preview rendering, export/import wiring.
 - `src/format.ts` — Markdown and TXT builders with the embedded data block.
 - `src/parse.ts` — import detection and the best-effort text parsers.
-- `src/pdf.ts` / `src/docx.ts` / `src/zip.ts` — the file writers.
+- `src/pdf.ts` / `src/docx.ts` / `src/zip.ts` / `src/png.ts` — the file writers (PNG draws one
+  canvas per A4 page).
 - `src/releases.ts` — release notes and changelog content.
 - `src/styles.css` — theme, layout, editor, resume paper and print styles.
 
