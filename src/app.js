@@ -6,10 +6,12 @@
 import { changelogEditor, releasesEditor } from './releases';
 import { buildDocx } from './docx';
 import { buildPdf } from './pdf';
-import { fileNameBase, toJson, toMarkdown, toPlainText } from './format';
+import { toJson, toMarkdown, toPlainText } from './format';
 import { parseImport } from './parse';
 import { APP_VERSION, BUILD_NUMBER } from './version';
-import { saveBlob } from './util';
+import { shareFiles, saveBlob } from './util';
+import { buildPngPages } from './png';
+import { createZip } from './zip';
 
 const STORAGE_KEY = 'gmoResumeManager.v2';
 const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
@@ -478,7 +480,7 @@ function loadUi() {
       if (parsed.sub.education === 'certifications' || parsed.sub.education === 'education') {
         ui.sub.education = parsed.sub.education;
       }
-      if (parsed.sub.settings === 'settings' || parsed.sub.settings === 'releases' || parsed.sub.settings === 'changelog') {
+      if (['settings', 'export', 'history', 'releases'].indexOf(parsed.sub.settings) !== -1) {
         ui.sub.settings = parsed.sub.settings;
       }
     }
@@ -783,17 +785,32 @@ function educationHub() {
 }
 
 function settingsHub() {
-  const sub = ui.sub && ui.sub.settings ? ui.sub.settings : 'settings';
+  const items = [
+    { id: 'settings', label: 'Settings' },
+    { id: 'export', label: 'Export' },
+    { id: 'history', label: 'History' },
+    { id: 'releases', label: 'Releases' }
+  ];
+  const sub = ui.sub && items.some((item) => item.id === ui.sub.settings) ? ui.sub.settings : 'settings';
+
   return `
-    <div class="subtabs" role="tablist" aria-label="Settings, release notes and changelog">
-      <button class="subtab${sub === 'settings' ? ' is-active' : ''}" type="button" role="tab"
-        aria-selected="${sub === 'settings'}" data-subtab="settings" data-value="settings">Settings</button>
-      <button class="subtab${sub === 'releases' ? ' is-active' : ''}" type="button" role="tab"
-        aria-selected="${sub === 'releases'}" data-subtab="settings" data-value="releases">Release notes</button>
-      <button class="subtab${sub === 'changelog' ? ' is-active' : ''}" type="button" role="tab"
-        aria-selected="${sub === 'changelog'}" data-subtab="settings" data-value="changelog">Changelog</button>
+    <div class="subtabs" role="tablist" aria-label="Settings sections">
+      ${items
+        .map(
+          (item) => `<button class="subtab${sub === item.id ? ' is-active' : ''}" type="button" role="tab"
+        aria-selected="${sub === item.id}" data-subtab="settings" data-value="${item.id}">${esc(item.label)}</button>`
+        )
+        .join('')}
     </div>
-    ${sub === 'releases' ? releasesEditor() : sub === 'changelog' ? changelogEditor() : settingsEditor()}
+    ${
+      sub === 'export'
+        ? exportEditor()
+        : sub === 'history'
+        ? historyEditor()
+        : sub === 'releases'
+        ? `${releasesEditor()}${changelogEditor()}`
+        : settingsEditor()
+    }
   `;
 }
 
@@ -831,7 +848,7 @@ function historyEditor() {
         ? history.length + (history.length === 1 ? ' version saved.' : ' versions saved.')
         : 'Nothing saved yet.'}</p>
     </div>
-    <button class="btn btn-primary btn-block" type="button" data-action="save">Save current version</button>
+    <p class="fineprint">Save in the bottom bar snapshots the current resume at any time.</p>
     ${
       history.length
         ? `<div class="history-list">${history.map(historyRow).join('')}</div>`
@@ -890,21 +907,16 @@ function skillsEditor() {
   );
 }
 
-function formatCard(kind, ext, title, description, primary) {
-  const copyable = kind === 'md' || kind === 'txt' || kind === 'json';
-  return `
-    <div class="format-card${primary ? ' is-primary' : ''}">
-      <span class="format-icon">${esc(ext)}</span>
-      <div>
-        <p class="format-name">${esc(title)}</p>
-        <p class="format-desc">${esc(description)}</p>
-      </div>
-      <div class="format-actions">
-        ${copyable ? `<button class="btn" type="button" data-copy="${kind}">Copy</button>` : ''}
-        <button class="btn${primary ? ' btn-primary' : ''}" type="button" data-export="${kind}">Download</button>
-      </div>
-    </div>
-  `;
+function formatOption(kind) {
+  const meta = EXPORT_FORMATS[kind];
+  return `<label class="format-row">
+    <input type="checkbox" data-format="${kind}" ${exportSelection[kind] ? 'checked' : ''} />
+    <span class="format-icon">${esc(meta.label)}</span>
+    <span class="format-text">
+      <span class="format-name">${esc(meta.label)}</span>
+      <span class="format-desc">${esc(meta.description)}</span>
+    </span>
+  </label>`;
 }
 
 function exportText(kind) {
@@ -1000,33 +1012,28 @@ function exportEditor() {
   return `
     <div class="panel-head">
       <h2>Export</h2>
-      <p class="panel-sub">Download the resume in the format you need. Every format carries the full data
-      set, so importing any of them anywhere rebuilds the same preview.</p>
+      <p class="panel-sub">Pick one or more formats. Files are named
+      <code>${esc(exportBaseName())}.ext</code> at the moment you export.</p>
     </div>
-    <div class="format-grid">
-      ${formatCard('pdf', 'PDF', 'PDF', 'A4, selectable text, ready to send.', true)}
-      ${formatCard('docx', 'DOCX', 'Word document', 'Opens in Word, Google Docs or Pages.')}
-      ${formatCard('txt', 'TXT', 'Plain text', 'Readable anywhere, with a hidden data block.')}
-      ${formatCard('md', 'MD', 'Markdown', 'Readable in a repo or notes app, imports back.')}
-      ${formatCard('json', 'JSON', 'JSON backup', 'Everything, including settings and order.')}
+    <div class="format-grid">${Object.keys(EXPORT_FORMATS).map(formatOption).join('')}</div>
+    <div class="export-bar">
+      <button class="btn btn-primary" type="button" data-action="export-download">Download</button>
+      <button class="btn" type="button" data-action="export-share">Share</button>
+      <button class="btn" type="button" data-action="export-copy">Copy text</button>
     </div>
+    <p class="fineprint">Two or more files are bundled into a single ZIP. On iPhone, Share opens the system
+    sheet: <strong>Save Image</strong> for PNGs, <strong>Save to Files</strong> for documents, or an app such as
+    WhatsApp to send them.</p>
 
     <div class="panel-head panel-head-tight">
       <h2>Import</h2>
-      <p class="panel-sub">Restore a JSON backup, or a Markdown or TXT export. The preview is rebuilt exactly
-      as it was when you exported.</p>
+      <p class="panel-sub">Use Import in the bottom bar to choose a file, or drop one here. JSON restores
+      everything; Markdown and TXT restore the resume.</p>
     </div>
-
     <div class="drop-zone" id="drop-zone">
       <strong>Drop a resume file here</strong>
       <span>.json, .md or .txt</span>
-      <button class="btn" type="button" data-action="import">Choose a file</button>
-      <button class="btn" type="button" data-action="sample">Load the sample resume</button>
     </div>
-
-    <p class="fineprint">Markdown and TXT exports include a small hidden copy of the data, which is what makes
-    the round trip exact. Opening and saving one of those files in a text editor keeps it intact — just avoid
-    deleting the block at the end.</p>
   `;
 }
 
@@ -1145,8 +1152,6 @@ const SECTIONS = [
   { id: 'education', label: 'Education', group: 'main', render: educationHub },
   { id: 'projects', label: 'Projects', group: 'main', render: projectsEditor },
   { id: 'skills', label: 'Skills', group: 'main', render: skillsEditor },
-  { id: 'history', label: 'History', group: 'main', render: historyEditor },
-  { id: 'export', label: 'Export', group: 'tool', render: exportEditor },
   { id: 'settings', label: 'Settings', group: 'utility', render: settingsHub }
 ];
 
@@ -1368,40 +1373,122 @@ function renderPreview() {
 /* -------------------------------------------------------------------- */
 
 const EXPORT_FORMATS = {
-  pdf: { label: 'PDF', ext: 'pdf' },
-  docx: { label: 'DOCX', ext: 'docx' },
-  txt: { label: 'TXT', ext: 'txt' },
-  md: { label: 'Markdown', ext: 'md' },
-  json: { label: 'JSON', ext: 'json' }
+  pdf: { label: 'PDF', ext: 'pdf', description: 'A4, one file, selectable text.' },
+  docx: { label: 'DOCX', ext: 'docx', description: 'Word document for editors.' },
+  png: { label: 'PNG', ext: 'png', description: 'One image per page, for sharing.' },
+  txt: { label: 'TXT', ext: 'txt', description: 'Plain text with the data block.' },
+  md: { label: 'MD', ext: 'md', description: 'Markdown, imports back.' },
+  json: { label: 'JSON', ext: 'json', description: 'Full backup, settings included.' }
 };
 
-async function exportFile(kind) {
-  const meta = EXPORT_FORMATS[kind];
-  if (!meta) return;
-  const base = fileNameBase(state);
-  const name = base + '.' + meta.ext;
+const exportSelection = { pdf: true, docx: false, png: false, txt: false, md: false, json: false };
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
+function exportBaseName() {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mmm = MONTHS[now.getMonth()];
+  const yyyy = now.getFullYear();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const name = (state.profile.name || 'resume').trim().replace(/[\\/:*?"<>|]/g, '') || 'resume';
+  return name + '_' + dd + '.' + mmm + '.' + yyyy + '-' + hh + '.' + mm;
+}
+
+function selectedKinds() {
+  return Object.keys(exportSelection).filter((kind) => exportSelection[kind]);
+}
+
+async function buildExportFiles() {
+  const base = exportBaseName();
+  const files = [];
+
+  for (const kind of selectedKinds()) {
+    if (kind === 'pdf') {
+      files.push(new File([buildPdf(state)], base + '.pdf', { type: 'application/pdf' }));
+    } else if (kind === 'docx') {
+      files.push(
+        new File([buildDocx(state)], base + '.docx', {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        })
+      );
+    } else if (kind === 'txt') {
+      files.push(new File([toPlainText(state)], base + '.txt', { type: 'text/plain' }));
+    } else if (kind === 'md') {
+      files.push(new File([toMarkdown(state)], base + '.md', { type: 'text/markdown' }));
+    } else if (kind === 'json') {
+      files.push(new File([toJson(state)], base + '.json', { type: 'application/json' }));
+    } else if (kind === 'png') {
+      const pages = await buildPngPages(state);
+      pages.forEach((blob, index) => {
+        const suffix = pages.length > 1 ? '-' + (index + 1) : '';
+        files.push(new File([blob], base + suffix + '.png', { type: 'image/png' }));
+      });
+    }
+  }
+
+  if (!files.length) toast('Choose at least one format', true);
+  return files;
+}
+
+async function zipFiles(files) {
+  const entries = [];
+  for (const file of files) {
+    entries.push({ name: file.name, data: new Uint8Array(await file.arrayBuffer()) });
+  }
+  return new Blob([createZip(entries)], { type: 'application/zip' });
+}
+
+async function exportDownload() {
   try {
-    let blob;
-    if (kind === 'pdf') blob = buildPdf(state);
-    else if (kind === 'docx') blob = buildDocx(state);
-    else if (kind === 'md') blob = new Blob([toMarkdown(state)], { type: 'text/markdown;charset=utf-8' });
-    else if (kind === 'txt') blob = new Blob([toPlainText(state)], { type: 'text/plain;charset=utf-8' });
-    else blob = new Blob([toJson(state)], { type: 'application/json' });
+    const files = await buildExportFiles();
+    if (!files.length) return;
 
-    const result = await saveBlob(blob, name);
+    if (files.length === 1) {
+      const file = files[0];
+      const kind = (file.name.split('.').pop() || '').toLowerCase();
+      const result = await saveBlob(file, file.name);
+      if (result === 'downloaded') toast('Saved ' + file.name);
+      else if (result === 'opened') showExportSheet(file, file.name, kind);
+      return;
+    }
 
-    if (result === 'downloaded') toast(meta.label + ' saved');
-    else if (result === 'opened') {
-      showExportSheet(blob, name, kind);
+    const zipName = exportBaseName() + '.zip';
+    const zip = await zipFiles(files);
+    const result = await saveBlob(zip, zipName);
+    if (result === 'downloaded') toast(files.length + ' files saved as ' + zipName);
+    else if (result === 'opened') showExportSheet(zip, zipName, 'zip');
+  } catch (error) {
+    console.error(error);
+    toast('Could not create the export: ' + (error && error.message ? error.message : 'unknown error'), true);
+  }
+}
+
+async function exportShare() {
+  try {
+    const files = await buildExportFiles();
+    if (!files.length) return;
+
+    const result = await shareFiles(files, exportBaseName());
+    if (result === 'shared') toast('Shared');
+    else if (result === 'unsupported') {
+      toast('Sharing is not available here — saving instead');
+      await exportDownload();
     }
   } catch (error) {
     console.error(error);
-    toast(
-      'Could not create the ' + meta.label + ': ' + (error && error.message ? error.message : 'unknown error'),
-      true
-    );
+    toast('Could not share: ' + (error && error.message ? error.message : 'unknown error'), true);
   }
+}
+
+function exportCopy() {
+  const kinds = selectedKinds();
+  const kind = kinds.includes('md') ? 'md' : kinds.includes('txt') ? 'txt' : kinds.includes('json') ? 'json' : null;
+  if (!kind) {
+    toast('Select Markdown, TXT or JSON to copy text', true);
+    return;
+  }
+  copyText(kind);
 }
 
 function importFile(file) {
@@ -1445,6 +1532,21 @@ function loadExample() {
 }
 
 function handleAction(action, button) {
+  if (action === 'export-download') {
+    exportDownload();
+    return;
+  }
+
+  if (action === 'export-share') {
+    exportShare();
+    return;
+  }
+
+  if (action === 'export-copy') {
+    exportCopy();
+    return;
+  }
+
   if (action === 'save') {
     saveSnapshot();
     return;
@@ -1565,6 +1667,12 @@ function goTo(id) {
   });
 }
 
+function goToSub(section, sub) {
+  if (!ui.sub) ui.sub = { education: 'education', settings: 'settings' };
+  ui.sub[section] = sub;
+  goTo(section);
+}
+
 function storageUsage() {
   try {
     const raw =
@@ -1619,6 +1727,11 @@ function onPanelInput(event) {
 
   if (event.type === 'change' && target.tagName !== 'SELECT') return;
 
+  if (target.dataset && target.dataset.format) {
+    exportSelection[target.dataset.format] = target.checked;
+    return;
+  }
+
   const path = target.dataset ? target.dataset.path : null;
   if (!path) return;
 
@@ -1658,7 +1771,7 @@ function onPanelClick(event) {
 
   const exportButton = event.target.closest('[data-export]');
   if (exportButton) {
-    exportFile(exportButton.dataset.export);
+    exportDownload();
     return;
   }
 
@@ -1681,13 +1794,8 @@ function onDockClick(event) {
   const action = button.dataset.dock;
   if (action === 'save') saveSnapshot();
   else if (action === 'import') document.getElementById('file-input').click();
-  else if (action === 'example') loadExample();
-  else if (action === 'export') goTo('export');
+  else if (action === 'export') goToSub('settings', 'export');
   else if (action === 'settings') goTo('settings');
-  else if (action === 'preview') {
-    const resume = document.getElementById('resume');
-    if (resume) resume.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } else if (action === 'pdf') exportFile('pdf');
 }
 
 function bindEvents() {
@@ -1730,7 +1838,6 @@ function bindEvents() {
   });
 
   document.getElementById('dock').addEventListener('click', onDockClick);
-  document.getElementById('btn-export-quick').addEventListener('click', () => goTo('export'));
   document.getElementById('btn-print').addEventListener('click', () => window.print());
 
   const fileInput = document.getElementById('file-input');

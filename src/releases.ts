@@ -9,6 +9,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.5.0',
+    name: 'One export sheet, a left rail, images',
+    summary: 'Multi-format export with PNG pages and sharing, a left-hand section rail on desktop, and no duplicated controls.',
+    notes: [
+      'Export is one panel now: tick any combination of PDF, DOCX, PNG, TXT, Markdown and JSON, then Download or Share. More than one file is bundled into a ZIP.',
+      'New PNG export draws one image per A4 page; Share opens the iOS sheet where Save Image puts them in Photos and Save to Files stores them in iCloud Drive.',
+      'Files are named Name_dd.mmm.yyyy-hh.mm, with -1, -2 suffixes when the PNG export runs to several pages.',
+      'On desktop the section tabs moved to a rail on the left, with the editor beside it and the resume on the right.',
+      'Export and History moved inside Settings, so the top level is Profile, Experience, Education, Projects, Skills and Settings.',
+      'The duplicate Export, Resume and sample-data buttons are gone; each action now lives in exactly one place.'
+    ]
+  },
+  {
     version: '2.4.1',
     name: 'Release notes look right again',
     summary: 'Restored the card styling for release notes and the changelog, and stopped sub-tab labels wrapping.',

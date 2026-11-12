@@ -67,6 +67,8 @@ export function fromBase64(value: string): string {
 
 export type SaveResult = 'downloaded' | 'opened' | 'cancelled';
 
+export type ShareResult = 'shared' | 'unsupported' | 'cancelled';
+
 interface WritableFile {
   write(data: Blob): Promise<void>;
   close(): Promise<void>;
@@ -133,4 +135,36 @@ export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult
   }, 60000);
 
   return 'downloaded';
+}
+
+
+/**
+ * Opens the system share sheet with the given files. On iOS that is the same sheet
+ * that offers "Save Image", "Save to Files", WhatsApp, Mail and the rest.
+ */
+export async function shareFiles(files: File[], title?: string): Promise<ShareResult> {
+  const nav = navigator as Navigator & {
+    canShare?: (data?: { files?: File[] }) => boolean;
+    share?: (data: { files?: File[]; title?: string }) => Promise<void>;
+  };
+
+  if (!nav.share) return 'unsupported';
+
+  let shareable = true;
+  if (nav.canShare) {
+    try {
+      shareable = nav.canShare({ files });
+    } catch (error) {
+      shareable = false;
+    }
+  }
+  if (!shareable) return 'unsupported';
+
+  try {
+    await nav.share({ files, title });
+    return 'shared';
+  } catch (error) {
+    if ((error as DOMException)?.name === 'AbortError') return 'cancelled';
+    return 'unsupported';
+  }
 }

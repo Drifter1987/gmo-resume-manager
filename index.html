@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#07110d" />
   <title>GMO Résumé Manager — resume &amp; experience tracker</title>
-  <meta name="description" content="Track your roles, achievements and skills, and export the resume as PDF, DOCX, TXT, Markdown or JSON." />
+  <meta name="description" content="Track your roles, achievements and skills, and export the resume as PDF, DOCX, PNG, TXT, Markdown or JSON." />
   <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
@@ -13,24 +13,23 @@
   <div class="bg-veil" aria-hidden="true"></div>
 
   <header class="app-bar">
-    <div class="bar-row">
-      <div class="brand">
-        <span class="brand-mark">GMO</span>
-        <div class="brand-text">
-          <h1>Résumé Manager</h1>
-          <p class="brand-sub">Resume &amp; experience tracker</p>
-        </div>
-      </div>
-      <div class="bar-status">
-        <span class="live-dot" aria-hidden="true"></span>
-        <span class="bar-status-label">Live preview</span>
-        <span class="preview-hint" id="saved-hint" role="status" aria-live="polite"></span>
+    <div class="brand">
+      <span class="brand-mark">GMO</span>
+      <div class="brand-text">
+        <h1>Résumé Manager</h1>
+        <p class="brand-sub">Resume &amp; experience tracker</p>
       </div>
     </div>
-    <nav class="tabs" id="tabs" role="tablist" aria-label="Sections"></nav>
+    <div class="bar-status">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span class="bar-status-label">Live preview</span>
+      <span class="preview-hint" id="saved-hint" role="status" aria-live="polite"></span>
+    </div>
   </header>
 
   <div class="app">
+    <nav class="rail" id="tabs" role="tablist" aria-label="Sections"></nav>
+
     <aside class="editor" id="editor">
       <div class="panel" id="editor-panel"></div>
     </aside>
@@ -40,7 +39,6 @@
         <span>Resume preview</span>
         <span class="preview-actions">
           <button class="btn btn-sm" id="btn-print" type="button">Print</button>
-          <button class="btn btn-sm btn-primary" id="btn-export-quick" type="button">Export</button>
         </span>
       </div>
       <article class="resume" id="resume"></article>
@@ -52,10 +50,9 @@
     <div class="dock-actions">
       <button class="dock-btn" type="button" data-dock="save">Save</button>
       <button class="dock-btn" type="button" data-dock="import">Import</button>
-      <button class="dock-btn" type="button" data-dock="preview">Resume</button>
       <button class="dock-btn" type="button" data-dock="export">Export</button>
       <button class="dock-btn" type="button" data-dock="settings">Settings</button>
-      <span class="dock-build" id="dock-build">v2.4.1 · build dev</span>
+      <span class="dock-build" id="dock-build">v2.5.0 · build dev</span>
     </div>
   </nav>
 

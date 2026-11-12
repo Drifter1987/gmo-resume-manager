@@ -9,10 +9,10 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 
 ## What it does
 
-- **Section tabs at the top** — Profile, Experience, Education (with Certifications inside), Projects,
-  Skills, History, then Export and Settings (with Release notes and Changelog inside).
-- **Docked bottom toolbar** — Save, import, jump to the resume, export and settings from anywhere,
-  plus the build number.
+- **Section rail** — on desktop the tabs sit in a slim column on the left, with the editor beside
+  it and the live resume on the right; on phones the same tabs run across the top. The sections are
+  Profile, Experience, Education (with Certifications inside), Projects, Skills and Settings.
+- **Docked bottom toolbar** — Save, import, export and settings from anywhere, plus the build number.
 - **Profile** — name, headline, contact details and a short summary.
 - **Experience** — roles with dates, a "still work here" toggle, one-line-per-bullet
   highlights and tags.
@@ -20,10 +20,11 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   Certifications carry issuer, issue date, expiry and a credential link, and render on the resume
   as a four-column table under Education.
 - **Live preview** — updates on every keystroke and every settings change.
-- **Export** — a separate tab with PDF, DOCX, TXT, Markdown and JSON, plus drag-and-drop
-  import.
-- **Settings** — dark/light theme, resume typeface (sans/serif), density, section
-  visibility, storage usage and a data reset, plus the release notes and changelog.
+- **Export** — inside Settings, one panel where any combination of PDF, DOCX, PNG, TXT, Markdown
+  and JSON can be ticked; Download bundles several files into a ZIP, Share opens the system sheet.
+  PNG export draws one image per A4 page.
+- **Settings** — dark/light theme, resume typeface, density, section visibility, storage usage,
+  a data reset, the export panel, the saved-version history, and the release notes and changelog.
 - **History** — a Save button (or Cmd/Ctrl+S) snapshots the whole resume into the browser:
   up to 40 versions, each with restore, download and delete.
 
@@ -33,14 +34,15 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 | --- | --- | --- |
 | PDF | Real PDF built with jsPDF, A4, selectable text | no (for reading) |
 | DOCX | Word document built in the browser, no server | no |
+| PNG | One image per A4 page, drawn on canvas | no |
 | TXT | Plain-text resume plus a hidden data block | yes |
 | MD | Markdown resume plus a hidden data block | yes |
 | JSON | Full backup: data, order and settings | yes |
 
-Saving a file: the app uses the browser's save dialog where it exists, the share sheet
-("Save to Files") where it does not, and otherwise opens an in-app sheet with the finished
-file, a preview for PDFs and an explicit Open/Save link — so an export is never a dead end.
-Markdown, TXT and JSON can also be copied straight to the clipboard.
+Files are named `Name_dd.mmm.yyyy-hh.mm.ext` at the moment of export, with `-1`, `-2` suffixes when
+PNG runs to several pages. On iPhone, Share opens the system sheet, where **Save Image** writes PNGs
+to Photos, **Save to Files** writes to iCloud Drive or On My iPhone, and apps such as WhatsApp appear
+with the document already attached.
 
 JSON carries the state as-is. Markdown and TXT carry the same snapshot base64-encoded in a
 comment (HTML comment in Markdown, a marked block at the end of the TXT). Importing any of
