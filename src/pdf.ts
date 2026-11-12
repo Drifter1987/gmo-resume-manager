@@ -68,7 +68,7 @@ export function buildPdf(state: ResumeState): Blob {
   };
 
   const entryHead = (title: string, dates: string) => {
-    ensure(17);
+    ensure(46);
     let dateWidth = 0;
     if (dates) {
       font('normal', 8.5);
@@ -184,13 +184,36 @@ export function buildPdf(state: ResumeState): Blob {
   if (s.sections.skills && skills.length) {
     section('Skills');
     skills.forEach((item) => {
-      ensure(14);
+      const label = ascii(item.label || 'Skills') + ':';
+      font('bold', 9.5);
+      const labelWidth = doc.getTextWidth(label);
+      const indent = Math.min(Math.max(labelWidth + 14, 96), contentWidth * 0.45);
+      font('normal', 9.5);
+      const valueLines = doc.splitTextToSize(ascii(item.items), contentWidth - indent) as string[];
+      const ownLine = labelWidth + 10 > indent;
+      const height = 12.5 * (ownLine ? 1 + valueLines.length : Math.max(1, valueLines.length));
+
+      ensure(height + 6);
+
       font('bold', 9.5);
       doc.setTextColor(INK[0], INK[1], INK[2]);
-      doc.text(ascii(item.label || 'Skills') + ':', MARGIN, y);
+      doc.text(label, MARGIN, y);
+
       font('normal', 9.5);
-      doc.text(ascii(item.items), MARGIN + 96, y);
-      y += 14;
+      if (ownLine) {
+        y += 12.5;
+        valueLines.forEach((line) => {
+          ensure(12.5);
+          doc.text(line, MARGIN + 12, y);
+          y += 12.5;
+        });
+      } else {
+        valueLines.forEach((line, index) => {
+          doc.text(line, MARGIN + indent, y + index * 12.5);
+        });
+        y += 12.5 * Math.max(1, valueLines.length);
+      }
+      y += 2;
     });
   }
 

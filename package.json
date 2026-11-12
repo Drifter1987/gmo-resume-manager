@@ -1,7 +1,7 @@
 {
   "name": "gmo-resume-manager",
   "private": true,
-  "version": "2.5.1",
+  "version": "2.5.2",
   "type": "module",
   "description": "GMO Resume Manager — a resume and experience tracker with a WebGL backdrop.",
   "scripts": {

@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.5.2',
+    name: 'Skills wrap in the PDF and PNG',
+    summary: 'Long skill labels no longer collide with their values or get clipped at the page edge.',
+    notes: [
+      'Skill rows now measure the label, wrap the value into the remaining width, and drop the value onto its own line when the label is long.',
+      'Role headings keep a block of space at the foot of a page, so a heading no longer sits alone while its bullets start the next page.',
+      'Same fix in both PDF and PNG output.'
+    ]
+  },
+  {
     version: '2.5.1',
     name: 'Calmer colours, clean page breaks',
     summary: 'A warmer sage palette, and PDF/PNG entries no longer collide with their dates or run past the page.',

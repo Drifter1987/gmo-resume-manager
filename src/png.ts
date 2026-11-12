@@ -100,7 +100,7 @@ export async function buildPngPages(state: ResumeState): Promise<Blob[]> {
   };
 
   const entryHead = async (title: string, dates: string) => {
-    await ensure(42);
+    await ensure(72);
     let dateWidth = 0;
     if (dates) {
       font(400, 19);
@@ -211,19 +211,34 @@ export async function buildPngPages(state: ResumeState): Promise<Blob[]> {
   if (s.sections.skills && skills.length) {
     await section('Skills');
     for (const item of skills) {
-      await ensure(30);
+      const label = (item.label || 'Skills') + ':';
+      font(700, 20);
+      const labelWidth = ctx.measureText(label).width;
+      const indent = Math.min(Math.max(labelWidth + 24, 210), (PAGE_W - MARGIN * 2) * 0.45);
+      font(400, 20);
+      const lines = wrap(item.items, PAGE_W - MARGIN * 2 - indent);
+      const ownLine = labelWidth + 18 > indent;
+      await ensure(30 * (ownLine ? 1 + lines.length : Math.max(1, lines.length)) + 6);
+
       font(700, 20);
       ctx.fillStyle = INK;
-      ctx.fillText((item.label || 'Skills') + ':', MARGIN, y);
+      ctx.fillText(label, MARGIN, y);
+
       font(400, 20);
-      const lines = wrap(item.items, PAGE_W - MARGIN * 2 - 230);
-      ctx.fillText(lines[0] || '', MARGIN + 210, y);
-      y += 28;
-      for (let i = 1; i < lines.length; i += 1) {
-        await ensure(28);
-        ctx.fillText(lines[i], MARGIN + 210, y);
+      if (ownLine) {
         y += 28;
+        for (const line of lines) {
+          await ensure(28);
+          ctx.fillText(line, MARGIN + 24, y);
+          y += 28;
+        }
+      } else {
+        lines.forEach((line, index) => {
+          ctx.fillText(line, MARGIN + indent, y + index * 28);
+        });
+        y += 28 * Math.max(1, lines.length);
       }
+      y += 4;
     }
   }
 
