@@ -71,15 +71,13 @@ never hold anyone's resume — the data exists only in the browser that entered 
 
 ```
 npm install
-npm run dev      # dev server for src/index.html
+npm run dev      # dev server
 npm run build    # production build into dist/
 npm run preview  # serve the build
 ```
 
-The app's page lives in `src/index.html`, and Vite writes the built site to `dist/`. `.github/workflows/pages.yml`
-builds it, uploads it for GitHub Pages, and also commits `dist/` back into the repository; the root
-`index.html` forwards to `./dist/`. That way the site works whether Pages is set to *GitHub Actions*
-or to *Deploy from a branch*.
+`index.html` sits at the repository root beside `src/`; Vite builds it into `dist/`. The workflow
+builds and publishes `dist/` to GitHub Pages without committing it, so `main` stays source-only.
 
 Vite is configured with `base: './'`, so the build works from any sub-path, including
 `/gmo-resume-manager/`. The build number comes from `vite.config.ts` (`__BUILD_NUMBER__`,
@@ -87,7 +85,7 @@ overridable with the `BUILD_NUMBER` environment variable).
 
 ## Files
 
-- `src/index.html` — page shell: backdrop, header with the section rail, editor, preview, dock.
+- `index.html` — page shell: backdrop, header with the section rail, editor, preview, dock.
 - `src/app.js` — state, persistence, editor and preview rendering, export/import wiring.
 - `src/format.ts` — Markdown and TXT builders with the embedded data block.
 - `src/parse.ts` — import detection and the best-effort text parsers.

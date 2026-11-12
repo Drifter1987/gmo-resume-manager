@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.5.4',
+    name: 'Back to a plain main branch',
+    summary: 'The page lives at the repository root again, with no build output committed.',
+    notes: [
+      'index.html is at the root of the repository, next to src/, exactly as before.',
+      'Build output is no longer committed; the workflow builds and publishes it without touching the branch.',
+      'The root redirect page and the extra src/index.html are gone.'
+    ]
+  },
+  {
     version: '2.5.3',
     name: 'Aligned skill columns',
     summary: 'Every skill value starts at the same column in the PDF and PNG.',
