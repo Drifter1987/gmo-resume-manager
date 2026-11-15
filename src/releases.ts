@@ -9,6 +9,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.6.3',
+    name: 'Import that actually opens',
+    summary: 'The file input now sits invisibly on top of the Import button.',
+    notes: [
+      'The previous label pointed at an input parked off-screen, which iOS refused to open.',
+      'The input is now an invisible layer over the Import control itself, so a tap opens the picker directly.'
+    ]
+  },
+  {
     version: '2.6.2',
     name: 'The live site builds again',
     summary: 'The built app is published into the repository and the root page forwards to it.',

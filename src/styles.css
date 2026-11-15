@@ -550,13 +550,20 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 .export-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .export-bar .btn { flex: 1 1 auto; }
 
-/* The file picker must stay in the layout for iOS to open it from a label. */
+/* The file input sits invisibly on top of its label, which is the only reliable
+   way to open the picker inside an iOS web view. */
+.file-trigger { position: relative; overflow: hidden; }
+
 .file-input {
-  position: fixed;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
   opacity: 0;
+  cursor: pointer;
+  font-size: 0;
 }
 
 label.dock-btn { cursor: pointer; user-select: none; }
