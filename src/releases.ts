@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.6.2',
+    name: 'The live site builds again',
+    summary: 'The built app is published into the repository and the root page forwards to it.',
+    notes: [
+      'The deployed site was serving the raw source, so the stylesheet and script 404ed at the domain root.',
+      'The workflow now commits the built site to dist/ and the root index.html forwards to it, which works under either Pages source setting.',
+      'The workflow rebases before pushing so the bot commit never blocks a later push.'
+    ]
+  },
+  {
     version: '2.6.1',
     name: 'Import opens the picker again',
     summary: 'Import is a native file control, the sheet offers Open, and Share is gone.',

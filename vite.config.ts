@@ -10,7 +10,12 @@ const envBuild = (globalThis as { process?: { env?: Record<string, string | unde
   ?.BUILD_NUMBER;
 
 export default defineConfig({
+  root: 'src',
   base: './',
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true
+  },
   define: {
     __BUILD_NUMBER__: JSON.stringify(envBuild || stamp)
   }
