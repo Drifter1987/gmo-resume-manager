@@ -6,6 +6,8 @@ export type CheckStatus = 'pass' | 'warn' | 'fail' | 'info';
 export interface Finding {
   status: CheckStatus;
   text: string;
+  /** Anchor inside the resume preview (a data-r-anchor value): tapping the finding scrolls there and flashes it. */
+  target?: string;
 }
 
 export interface CheckResult {
@@ -196,28 +198,31 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
   const schoolsWithoutName = state.education.filter((item) => !item.school.trim() && !item.degree.trim()).length;
 
   const atsFindings: Finding[] = [];
-  if (!p.name.trim()) atsFindings.push({ status: 'fail', text: 'No name in the profile, so a parser has nothing to anchor the document on.' });
+  if (!p.name.trim())
+    atsFindings.push({ status: 'fail', text: 'No name in the profile, so a parser has nothing to anchor the document on.', target: 'name' });
   if (missingContact.length) {
-    atsFindings.push({ status: 'warn', text: 'Missing contact fields: ' + missingContact.join(', ') + '.' });
+    atsFindings.push({ status: 'warn', text: 'Missing contact fields: ' + missingContact.join(', ') + '.', target: 'contact' });
   } else {
-    atsFindings.push({ status: 'pass', text: 'Name, email, phone, location, and a LinkedIn or website are all present.' });
+    atsFindings.push({ status: 'pass', text: 'Name, email, phone, location, and a LinkedIn or website are all present.', target: 'contact' });
   }
   atsFindings.push(
     rolesWithoutTitle || rolesWithoutDate
       ? {
           status: 'warn',
-          text: `${rolesWithoutTitle} role(s) without a title, ${rolesWithoutDate} without a full start/end date — parsers drop those lines.`
+          text: `${rolesWithoutTitle} role(s) without a title, ${rolesWithoutDate} without a full start/end date — parsers drop those lines.`,
+          target: 'experience'
         }
-      : { status: 'pass', text: `All ${roles.length} role(s) carry a title and dates that a parser can read.` }
+      : { status: 'pass', text: `All ${roles.length} role(s) carry a title and dates that a parser can read.`, target: 'experience' }
   );
   if (state.education.length) {
     atsFindings.push(
       schoolsWithoutName
-        ? { status: 'warn', text: `${schoolsWithoutName} education entr(y/ies) have neither school nor degree.` }
-        : { status: 'pass', text: 'Every education entry has a school and a degree.' }
+        ? { status: 'warn', text: `${schoolsWithoutName} education entr(y/ies) have neither school nor degree.`, target: 'education' }
+        : { status: 'pass', text: 'Every education entry has a school and a degree.', target: 'education' }
     );
   }
-  if (!state.skills.length) atsFindings.push({ status: 'warn', text: 'No skills section, which most keyword parsers rely on.' });
+  if (!state.skills.length)
+    atsFindings.push({ status: 'warn', text: 'No skills section, which most keyword parsers rely on.', target: 'skills' });
 
   const atsScore = clamp(
     100 -
@@ -250,21 +255,29 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
   skimFindings.push(
     headline
       ? headline.length <= 120
-        ? { status: 'pass', text: 'Headline states the role in ' + headline.length + ' characters.' }
-        : { status: 'warn', text: 'Headline is ' + headline.length + ' characters — skim readers lose it after about 120.' }
-      : { status: 'fail', text: 'No headline: the first thing a recruiter looks for is missing.' }
+        ? { status: 'pass', text: 'Headline states the role in ' + headline.length + ' characters.', target: 'headline' }
+        : {
+            status: 'warn',
+            text: 'Headline is ' + headline.length + ' characters — skim readers lose it after about 120.',
+            target: 'headline'
+          }
+      : { status: 'fail', text: 'No headline: the first thing a recruiter looks for is missing.', target: 'headline' }
   );
   skimFindings.push(
     summary.length >= 40 && summary.length <= 600
-      ? { status: 'pass', text: 'Summary is ' + summary.length + ' characters — about one short paragraph.' }
+      ? { status: 'pass', text: 'Summary is ' + summary.length + ' characters — about one short paragraph.', target: 'summary' }
       : summary.length === 0
-      ? { status: 'warn', text: 'No summary; the first paragraph is then whatever the first role says.' }
-      : { status: 'warn', text: `Summary is ${summary.length} characters; keep it between 40 and 600.` }
+      ? { status: 'warn', text: 'No summary; the first paragraph is then whatever the first role says.', target: 'summary' }
+      : { status: 'warn', text: `Summary is ${summary.length} characters; keep it between 40 and 600.`, target: 'summary' }
   );
   skimFindings.push(
     newestBullets >= 2
-      ? { status: 'pass', text: 'Most recent role has ' + newestBullets + ' bullet(s).' }
-      : { status: 'warn', text: 'The most recent role has ' + newestBullets + ' bullet(s); give it two or three.' }
+      ? { status: 'pass', text: 'Most recent role has ' + newestBullets + ' bullet(s).', target: newest ? 'experience:' + newest.id : 'experience' }
+      : {
+          status: 'warn',
+          text: 'The most recent role has ' + newestBullets + ' bullet(s); give it two or three.',
+          target: newest ? 'experience:' + newest.id : 'experience'
+        }
   );
 
   const skimScore = clamp(
@@ -294,15 +307,17 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
       status: coverage.ratio >= 0.7 ? 'pass' : coverage.ratio >= 0.4 ? 'warn' : 'fail',
       text: `${coverage.matched.length} of ${coverage.matched.length + coverage.missing.length} target terms appear (${Math.round(
         coverage.ratio * 100
-      )}%).`
+      )}%).`,
+      target: 'skills'
     });
     if (coverage.missing.length) {
-      rubricFindings.push({ status: 'warn', text: 'Missing: ' + coverage.missing.slice(0, 12).join(', ') + '.' });
+      rubricFindings.push({ status: 'warn', text: 'Missing: ' + coverage.missing.slice(0, 12).join(', ') + '.', target: 'skills' });
     }
     coverage.stuffed.forEach((item) => {
       rubricFindings.push({
         status: 'warn',
-        text: `"${item.term}" appears ${item.count} times — that reads as keyword stuffing.`
+        text: `"${item.term}" appears ${item.count} times — that reads as keyword stuffing.`,
+        target: 'skills'
       });
     });
   }
@@ -331,14 +346,16 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
           status: ratio >= 0.6 ? 'pass' : ratio >= 0.3 ? 'warn' : 'fail',
           text: `${quantified} of ${allBullets.length} bullets carry a number, %, currency or volume (${Math.round(
             ratio * 100
-          )}%).`
+          )}%).`,
+          target: 'experience'
         }
-      : { status: 'fail', text: 'No achievement bullets yet.' }
+      : { status: 'fail', text: 'No achievement bullets yet.', target: 'experience' }
   );
   if (allBullets.length) {
     achievementFindings.push({
       status: averageWords > 32 ? 'warn' : 'pass',
-      text: `Bullets average ${averageWords} words; the longest is ${longest}.`
+      text: `Bullets average ${averageWords} words; the longest is ${longest}.`,
+      target: 'experience'
     });
   }
   const achievementScore = clamp(Math.round(ratio * 100) - (averageWords > 32 ? 10 : 0));
@@ -367,17 +384,22 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
   const timelineFindings: Finding[] = [];
   timelineFindings.push({
     status: totalYears > 0 ? 'pass' : 'warn',
-    text: totalYears > 0 ? `About ${totalYears} year(s) of dated experience in total.` : 'No dated experience yet.'
+    text: totalYears > 0 ? `About ${totalYears} year(s) of dated experience in total.` : 'No dated experience yet.',
+    target: 'experience'
   });
   if (unknown.length) {
-    timelineFindings.push({ status: 'warn', text: 'Cannot read dates for: ' + unknown.join(', ') + '.' });
+    timelineFindings.push({ status: 'warn', text: 'Cannot read dates for: ' + unknown.join(', ') + '.', target: 'experience' });
   }
-  gaps.forEach((gap) => timelineFindings.push({ status: 'warn', text: 'A gap of ' + gap + ' between roles.' }));
+  gaps.forEach((gap) => timelineFindings.push({ status: 'warn', text: 'A gap of ' + gap + ' between roles.', target: 'experience' }));
   if (overlaps) {
-    timelineFindings.push({ status: 'info', text: `${overlaps} role(s) overlap in time — fine, but be ready to explain it.` });
+    timelineFindings.push({
+      status: 'info',
+      text: `${overlaps} role(s) overlap in time — fine, but be ready to explain it.`,
+      target: 'experience'
+    });
   }
   if (!gaps.length && intervals.length) {
-    timelineFindings.push({ status: 'pass', text: 'No gaps longer than six months between roles.' });
+    timelineFindings.push({ status: 'pass', text: 'No gaps longer than six months between roles.', target: 'experience' });
   }
   const timelineScore = clamp(
     100 - gaps.length * 15 - unknown.length * 15 - (intervals.length ? 0 : 40) + (overlaps ? 0 : 0)
@@ -398,10 +420,11 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
         const count = splitLines(item.highlights).length;
         return {
           status: count >= 2 ? 'pass' : 'warn',
-          text: `${item.role || item.company || 'Untitled role'}: ${count} bullet(s)${count < 2 ? ' — nothing to probe in a STAR interview.' : '.'}`
+          text: `${item.role || item.company || 'Untitled role'}: ${count} bullet(s)${count < 2 ? ' — nothing to probe in a STAR interview.' : '.'}`,
+          target: 'experience:' + item.id
         };
       })
-    : [{ status: 'fail', text: 'No roles to interview about yet.' }];
+    : [{ status: 'fail', text: 'No roles to interview about yet.', target: 'experience' }];
   const interviewScore = roles.length ? clamp(100 - thinRoles.length * 25) : 0;
   checks.push({
     id: 'interview',
@@ -426,10 +449,11 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
   const skillFindings: Finding[] = [];
   skillFindings.push({
     status: skillItems.length >= 8 ? 'pass' : skillItems.length ? 'warn' : 'fail',
-    text: `${skillGroups.length} group(s), ${skillItems.length} distinct item(s).`
+    text: `${skillGroups.length} group(s), ${skillItems.length} distinct item(s).`,
+    target: 'skills'
   });
   if (duplicates.length) {
-    skillFindings.push({ status: 'warn', text: 'Repeated items: ' + Array.from(new Set(duplicates)).slice(0, 8).join(', ') + '.' });
+    skillFindings.push({ status: 'warn', text: 'Repeated items: ' + Array.from(new Set(duplicates)).slice(0, 8).join(', ') + '.', target: 'skills' });
   }
   const skillScore = clamp(
     (skillGroups.length >= 3 ? 40 : skillGroups.length ? 25 : 0) + (skillItems.length >= 8 ? 40 : skillItems.length * 5) + (duplicates.length ? 0 : 20)
@@ -459,10 +483,15 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
   if (certs.length) {
     certFindings.push({
       status: linkedCerts.length === certs.length ? 'pass' : 'warn',
-      text: `${linkedCerts.length} of ${certs.length} certificates have a credential link.`
+      text: `${linkedCerts.length} of ${certs.length} certificates have a credential link.`,
+      target: 'certifications'
     });
     if (linkedCerts.length < certs.length) {
-      certFindings.push({ status: 'warn', text: 'Unverifiable certificates carry less weight in screening; add the credential URL where one exists.' });
+      certFindings.push({
+        status: 'warn',
+        text: 'Unverifiable certificates carry less weight in screening; add the credential URL where one exists.',
+        target: 'certifications'
+      });
     }
     certScore = clamp(Math.round((linkedCerts.length / certs.length) * 100));
     certStatus = statusFor(certScore);
@@ -472,9 +501,14 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
       text: `${storedAsSkills.length} certificate(s) sit in the Skills section (${certGroups
         .map((group) => '"' + group.label.trim() + '"')
         .slice(0, 3)
-        .join(', ')}), where they cannot carry an issuer, date or credential link.`
+        .join(', ')}), where they cannot carry an issuer, date or credential link.`,
+      target: 'skills'
     });
-    certFindings.push({ status: 'info', text: 'Move them to the Certifications tab (inside Education) so a screener can verify them.' });
+    certFindings.push({
+      status: 'info',
+      text: 'Move them to the Certifications tab (inside Education) so a screener can verify them.',
+      target: 'skills'
+    });
     certScore = 40;
     certStatus = 'warn';
   } else {
@@ -507,12 +541,17 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
     profileLinks.length || linkedProjects.length
       ? {
           status: 'pass',
-          text: `${profileLinks.length ? 'A profile link, ' : ''}${linkedProjects.length} project link(s) give a reviewer something to open.`
+          text: `${profileLinks.length ? 'A profile link, ' : ''}${linkedProjects.length} project link(s) give a reviewer something to open.`,
+          target: profileLinks.length ? 'contact' : 'projects'
         }
-      : { status: 'warn', text: 'No portfolio or profile links — for technical roles reviewers expect at least one.' }
+      : { status: 'warn', text: 'No portfolio or profile links — for technical roles reviewers expect at least one.', target: 'contact' }
   );
   if (brokenAll.length) {
-    linkFindings.push({ status: 'warn', text: 'These do not read as working URLs: ' + brokenAll.slice(0, 6).join(', ') + '.' });
+    linkFindings.push({
+      status: 'warn',
+      text: 'These do not read as working URLs: ' + brokenAll.slice(0, 6).join(', ') + '.',
+      target: brokenProfileLinks.length ? 'contact' : 'projects'
+    });
   }
   const linkScore = clamp(
     (profileLinks.length ? 40 : 0) +

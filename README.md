@@ -31,7 +31,8 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   parsing, the recruiter skim, a rubric against the advert's keywords, achievements, timeline
   gaps, STAR readiness, skills, verifiable certifications, working portfolio links, a
   blind-screening view, and length. The LLM section builds a ready-to-send prompt to paste into
-  any chat model next to the exported .md file.
+  any chat model next to the exported .md file. Tapping a finding scrolls the live preview to
+  the exact role, entry or line it concerns and flashes it.
 
 ## Exports and round trips
 

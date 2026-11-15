@@ -1226,12 +1226,32 @@ function screenCard(check, report) {
     ${
       check.findings.length
         ? `<ul class="screen-findings">${check.findings
-            .map((finding) => `<li class="is-${finding.status}">${esc(finding.text)}</li>`)
+            .map((finding) =>
+              finding.target
+                ? `<li class="is-${finding.status}"><button class="screen-jump" type="button" data-jump="${esc(
+                    finding.target
+                  )}" title="Show this in the resume preview">${esc(finding.text)}</button></li>`
+                : `<li class="is-${finding.status}">${esc(finding.text)}</li>`
+            )
             .join('')}</ul>`
         : ''
     }
     ${check.id === 'blind' && report.blindText ? `<pre class="prompt-box">${esc(report.blindText)}</pre>` : ''}
   </article>`;
+}
+
+/** Scrolls the live preview to a screening finding and flashes it. */
+function jumpToResume(anchor) {
+  const el = document.querySelector('#resume [data-r-anchor="' + anchor + '"]');
+  if (!el) {
+    toast('That part is not in the preview — the section may be hidden', true);
+    return;
+  }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('is-flashed');
+  void el.offsetWidth; /* restart the flash animation on a second tap */
+  el.classList.add('is-flashed');
+  setTimeout(() => el.classList.remove('is-flashed'), 1700);
 }
 
 function llmCard(check, prompt) {
@@ -1345,7 +1365,7 @@ function renderRole(item) {
   const sub = dots([item.company, item.location]);
 
   return `
-    <div class="r-entry">
+    <div class="r-entry" data-r-anchor="experience:${esc(item.id)}">
       <div class="r-entry-head">
         <h3 class="r-entry-title">${esc(item.role || 'Role')}</h3>
         ${dates ? `<span class="r-entry-dates">${esc(dates)}</span>` : ''}
@@ -1369,7 +1389,7 @@ function renderEducation(item) {
   const details = splitLines(item.details);
 
   return `
-    <div class="r-entry">
+    <div class="r-entry" data-r-anchor="education:${esc(item.id)}">
       <div class="r-entry-head">
         <h3 class="r-entry-title">${esc(title)}</h3>
         ${dates ? `<span class="r-entry-dates">${esc(dates)}</span>` : ''}
@@ -1389,7 +1409,7 @@ function renderProject(item) {
     : esc(item.name || 'Project');
 
   return `
-    <div class="r-entry">
+    <div class="r-entry" data-r-anchor="projects:${esc(item.id)}">
       <div class="r-entry-head">
         <h3 class="r-entry-title">${title}</h3>
       </div>
@@ -1450,36 +1470,44 @@ function renderPreview() {
   if (profile.linkedin) contact.push(webLink(profile.linkedin));
 
   if (settings.showSummary && profile.summary.trim()) {
-    body.push(`<section class="r-section"><p class="r-summary">${esc(profile.summary)}</p></section>`);
+    body.push(`<section class="r-section" data-r-anchor="summary"><p class="r-summary">${esc(profile.summary)}</p></section>`);
   }
 
   const roles = state.experience.filter((item) => item.role || item.company);
   if (settings.sections.experience && roles.length) {
-    body.push(`<section class="r-section">${sectionTitle('Experience')}${roles.map(renderRole).join('')}</section>`);
+    body.push(
+      `<section class="r-section" data-r-anchor="experience">${sectionTitle('Experience')}${roles.map(renderRole).join('')}</section>`
+    );
   }
 
   const schools = state.education.filter((item) => item.school || item.degree);
   if (settings.sections.education && schools.length) {
-    body.push(`<section class="r-section">${sectionTitle('Education')}${schools.map(renderEducation).join('')}</section>`);
+    body.push(
+      `<section class="r-section" data-r-anchor="education">${sectionTitle('Education')}${schools.map(renderEducation).join('')}</section>`
+    );
   }
 
   const certs = state.certifications.filter((item) => item.name);
   if (settings.sections.certifications && certs.length) {
-    body.push(`<section class="r-section">${sectionTitle('Certifications')}${renderCertifications(certs)}</section>`);
+    body.push(
+      `<section class="r-section" data-r-anchor="certifications">${sectionTitle('Certifications')}${renderCertifications(certs)}</section>`
+    );
   }
 
   const projects = state.projects.filter((item) => item.name);
   if (settings.sections.projects && projects.length) {
-    body.push(`<section class="r-section">${sectionTitle('Projects')}${projects.map(renderProject).join('')}</section>`);
+    body.push(
+      `<section class="r-section" data-r-anchor="projects">${sectionTitle('Projects')}${projects.map(renderProject).join('')}</section>`
+    );
   }
 
   const skills = state.skills.filter((item) => item.label || item.items);
   if (settings.sections.skills && skills.length) {
     body.push(
-      `<section class="r-section">${sectionTitle('Skills')}${skills
+      `<section class="r-section" data-r-anchor="skills">${sectionTitle('Skills')}${skills
         .map(
           (item) =>
-            `<div class="r-skill"><span class="r-skill-label">${esc(item.label || 'Skills')}</span><span>${esc(
+            `<div class="r-skill" data-r-anchor="skills:${esc(item.id)}"><span class="r-skill-label">${esc(item.label || 'Skills')}</span><span>${esc(
               item.items
             )}</span></div>`
         )
@@ -1506,9 +1534,9 @@ function renderPreview() {
 
   resume.innerHTML = `
     <header class="r-header">
-      <h1 class="r-name">${esc(profile.name || 'Your name')}</h1>
-      ${profile.headline ? `<p class="r-headline">${esc(profile.headline)}</p>` : ''}
-      ${contact.length ? `<p class="r-contact">${contact.join(' <span class="r-dot">·</span> ')}</p>` : ''}
+      <h1 class="r-name" data-r-anchor="name">${esc(profile.name || 'Your name')}</h1>
+      ${profile.headline ? `<p class="r-headline" data-r-anchor="headline">${esc(profile.headline)}</p>` : ''}
+      ${contact.length ? `<p class="r-contact" data-r-anchor="contact">${contact.join(' <span class="r-dot">·</span> ')}</p>` : ''}
     </header>
     ${body.join('')}
   `;
@@ -1928,6 +1956,12 @@ function onPanelClick(event) {
     ui.sub[subButton.dataset.subtab] = subButton.dataset.value;
     saveUi();
     renderEditor();
+    return;
+  }
+
+  const jumpButton = event.target.closest('[data-jump]');
+  if (jumpButton) {
+    jumpToResume(jumpButton.dataset.jump);
     return;
   }
 

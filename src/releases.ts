@@ -9,6 +9,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.7.2',
+    name: 'Tap a finding, see the line',
+    summary: 'Findings in the Screening tab are tappable: they scroll the live preview to the exact role, entry or line they concern.',
+    notes: [
+      'Every finding now knows where it lives in the resume — a missing phone jumps to the contact line, a thin role jumps to that role, certificate groups in Skills jump to the Skills table.',
+      'The spot flashes briefly in the preview so you can see what the finding means.'
+    ]
+  },
+  {
     version: '2.7.1',
     name: 'Honest screening numbers',
     summary: 'The Achievements word counts and the Certifications check now read this resume correctly.',

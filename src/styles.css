@@ -1360,6 +1360,30 @@ label.dock-btn { cursor: pointer; user-select: none; }
 .screen-findings li.is-warn { color: var(--gold); }
 .screen-findings li.is-fail { color: var(--danger); }
 
+.screen-jump {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.screen-jump::after { content: ' ↗'; opacity: 0.55; }
+.screen-jump:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* tapping a finding scrolls the preview to its anchor and flashes it */
+#resume [data-r-anchor] { scroll-margin-top: 132px; border-radius: 6px; }
+
+#resume [data-r-anchor].is-flashed { animation: anchor-flash 1.6s ease; }
+
+@keyframes anchor-flash {
+  0% { background: rgba(154, 91, 0, 0.16); box-shadow: 0 0 0 2px rgba(154, 91, 0, 0.35); }
+  100% { background: transparent; box-shadow: none; }
+}
+
 .screen-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 
 .prompt-box {
