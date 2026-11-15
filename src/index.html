@@ -49,19 +49,15 @@
     <span class="dock-status" id="dock-status">Saved on this device</span>
     <div class="dock-actions">
       <button class="dock-btn" type="button" data-dock="save">Save</button>
-      <label class="dock-btn" for="file-input">Import</label>
+      <label class="dock-btn file-trigger">
+        Import
+        <input type="file" id="file-input" class="file-input" accept=".json,.md,.markdown,.txt,.pdf,.docx,.png,.zip" />
+      </label>
       <button class="dock-btn" type="button" data-dock="export">Export</button>
       <button class="dock-btn" type="button" data-dock="settings">Settings</button>
-      <span class="dock-build" id="dock-build">v2.6.1 · build dev</span>
+      <span class="dock-build" id="dock-build">v2.6.3 · build dev</span>
     </div>
   </nav>
-
-  <input
-    type="file"
-    id="file-input"
-    class="file-input"
-    accept=".json,.md,.markdown,.txt,.pdf,.docx,.png,.zip"
-  />
 
   <script type="module" src="./main.ts"></script>
 </body>
