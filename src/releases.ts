@@ -9,6 +9,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.7.1',
+    name: 'Honest screening numbers',
+    summary: 'The Achievements word counts and the Certifications check now read this resume correctly.',
+    notes: [
+      'Bullet word counts were split on commas and always reported 1 word; they split on spaces now.',
+      'Certificates stored as groups in the Skills section are detected and reported as unverifiable there, with a pointer to the Certifications tab.'
+    ]
+  },
+  {
     version: '2.7.0',
     name: 'Screening checks',
     summary: 'A Screening tab that scores the resume against the methods recruiters use, with a ready LLM prompt.',

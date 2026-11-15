@@ -320,7 +320,7 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
   const allBullets = roles.reduce<string[]>((all, item) => all.concat(splitLines(item.highlights)), []);
   const quantified = allBullets.filter((line) => /\d|%|€|\$|£|million|thousand|\bk\b/i.test(line)).length;
   const ratio = allBullets.length ? quantified / allBullets.length : 0;
-  const bulletWords = allBullets.map((line) => splitList(line.replace(/,/g, ' ')).length || line.split(/\s+/).length);
+  const bulletWords = allBullets.map((line) => line.split(/\s+/).filter(Boolean).length);
   const averageWords = bulletWords.length ? Math.round(bulletWords.reduce((a, b) => a + b, 0) / bulletWords.length) : 0;
   const longest = bulletWords.length ? Math.max(...bulletWords) : 0;
 
@@ -446,29 +446,51 @@ export function evaluateResume(state: ResumeState): ScreeningReport {
   /* --- certifications --- */
   const certs = state.certifications.filter((item) => item.name.trim());
   const linkedCerts = certs.filter((item) => item.link.trim() !== '');
-  const certFindings: Finding[] = certs.length
-    ? [
-        {
-          status: linkedCerts.length === certs.length ? 'pass' : 'warn',
-          text: `${linkedCerts.length} of ${certs.length} certificates have a credential link.`
-        },
-        ...(linkedCerts.length < certs.length
-          ? [
-              {
-                status: 'warn' as CheckStatus,
-                text: 'Unverifiable certificates carry less weight in screening; add the credential URL where one exists.'
-              }
-            ]
-          : [])
-      ]
-    : [{ status: 'info', text: 'No certifications listed. Fine for many roles, expected in some.' }];
-  const certScore = certs.length ? clamp(Math.round((linkedCerts.length / certs.length) * 100)) : 70;
+
+  /* Certificates can also arrive as groups in the Skills section — they cannot
+     carry an issuer, date or credential link there, so a screener cannot verify them. */
+  const certGroups = state.skills.filter((item) => /certif|licen|badge/i.test(item.label));
+  const storedAsSkills = certGroups.reduce<string[]>((all, item) => all.concat(splitList(item.items)), []);
+
+  const certFindings: Finding[] = [];
+  let certStatus: CheckStatus = 'info';
+  let certScore = 70;
+
+  if (certs.length) {
+    certFindings.push({
+      status: linkedCerts.length === certs.length ? 'pass' : 'warn',
+      text: `${linkedCerts.length} of ${certs.length} certificates have a credential link.`
+    });
+    if (linkedCerts.length < certs.length) {
+      certFindings.push({ status: 'warn', text: 'Unverifiable certificates carry less weight in screening; add the credential URL where one exists.' });
+    }
+    certScore = clamp(Math.round((linkedCerts.length / certs.length) * 100));
+    certStatus = statusFor(certScore);
+  } else if (storedAsSkills.length) {
+    certFindings.push({
+      status: 'warn',
+      text: `${storedAsSkills.length} certificate(s) sit in the Skills section (${certGroups
+        .map((group) => '"' + group.label.trim() + '"')
+        .slice(0, 3)
+        .join(', ')}), where they cannot carry an issuer, date or credential link.`
+    });
+    certFindings.push({ status: 'info', text: 'Move them to the Certifications tab (inside Education) so a screener can verify them.' });
+    certScore = 40;
+    certStatus = 'warn';
+  } else {
+    certFindings.push({ status: 'info', text: 'No certifications listed. Fine for many roles, expected in some.' });
+  }
+
   checks.push({
     id: 'certifications',
     name: 'Certifications',
-    status: certs.length ? statusFor(certScore) : 'info',
+    status: certStatus,
     score: certScore,
-    summary: 'Whether certificates can be verified.',
+    summary: certs.length
+      ? 'Whether certificates can be verified.'
+      : storedAsSkills.length
+      ? 'Certificates found as skill groups — unverifiable there.'
+      : 'Whether certificates can be verified.',
     findings: certFindings
   });
 
