@@ -550,6 +550,17 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 .export-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .export-bar .btn { flex: 1 1 auto; }
 
+/* The file picker must stay in the layout for iOS to open it from a label. */
+.file-input {
+  position: fixed;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+label.dock-btn { cursor: pointer; user-select: none; }
+
 .sheet {
   position: fixed;
   inset: 0;

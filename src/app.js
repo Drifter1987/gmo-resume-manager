@@ -9,7 +9,7 @@ import { buildPdf } from './pdf';
 import { toJson, toMarkdown, toPlainText } from './format';
 import { parseImportBytes } from './parse';
 import { APP_VERSION, BUILD_NUMBER } from './version';
-import { shareFiles, saveBlob } from './util';
+import { saveBlob } from './util';
 import { buildPngPages } from './png';
 import { createZip } from './zip';
 import { runRoundTrip, formatReport } from './selftest';
@@ -960,12 +960,11 @@ function showExportSheet(blob, name, kind) {
           : `<div class="sheet-blank">${esc(kind.toUpperCase())} file · ${size} KB</div>`
       }
       <div class="sheet-actions">
-        <a class="btn btn-primary" href="${url}" download="${esc(name)}">Open / Save file</a>
+        <a class="btn btn-primary" href="${url}" target="_blank" rel="noopener">Open</a>
         ${copyable ? `<button class="btn" type="button" data-copy="${kind}">Copy text</button>` : ''}
         <button class="btn" type="button" data-sheet-close>Close</button>
       </div>
-      <p class="fineprint">If the file opens instead of saving, use the browser's share button and choose
-      <strong>Save to Files</strong>.</p>
+      <p class="fineprint">Open shows the file in a new tab, where the browser's own share button can send it on.</p>
     </div>
   `;
 
@@ -1023,12 +1022,10 @@ function exportEditor() {
     <div class="format-grid">${Object.keys(EXPORT_FORMATS).map(formatOption).join('')}</div>
     <div class="export-bar">
       <button class="btn btn-primary" type="button" data-action="export-download">Download</button>
-      <button class="btn" type="button" data-action="export-share">Share</button>
       <button class="btn" type="button" data-action="export-copy">Copy text</button>
     </div>
-    <p class="fineprint">Two or more files are bundled into a single ZIP. On iPhone, Share opens the system
-    sheet: <strong>Save Image</strong> for PNGs, <strong>Save to Files</strong> for documents, or an app such as
-    WhatsApp to send them.</p>
+    <p class="fineprint">Two or more files are bundled into a single ZIP. Download opens the finished file,
+    ready to share from there. Use Import in the bottom bar (or drop a file here) to bring a resume back in.</p>
 
     <div class="panel-head panel-head-tight">
       <h2>Import</h2>
@@ -1485,23 +1482,6 @@ async function exportDownload() {
   }
 }
 
-async function exportShare() {
-  try {
-    const files = await buildExportFiles();
-    if (!files.length) return;
-
-    const result = await shareFiles(files, exportBaseName());
-    if (result === 'shared') toast('Shared');
-    else if (result === 'unsupported') {
-      toast('Sharing is not available here — saving instead');
-      await exportDownload();
-    }
-  } catch (error) {
-    console.error(error);
-    toast('Could not share: ' + (error && error.message ? error.message : 'unknown error'), true);
-  }
-}
-
 function exportCopy() {
   const kinds = selectedKinds();
   const kind = kinds.includes('md') ? 'md' : kinds.includes('txt') ? 'txt' : kinds.includes('json') ? 'json' : null;
@@ -1576,11 +1556,6 @@ async function runVerify() {
 function handleAction(action, button) {
   if (action === 'export-download') {
     exportDownload();
-    return;
-  }
-
-  if (action === 'export-share') {
-    exportShare();
     return;
   }
 

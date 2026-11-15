@@ -21,8 +21,8 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   as a four-column table under Education.
 - **Live preview** — updates on every keystroke and every settings change.
 - **Export** — inside Settings, one panel where any combination of PDF, DOCX, PNG, TXT, Markdown
-  and JSON can be ticked; Download bundles several files into a ZIP, Share opens the system sheet.
-  PNG export draws one image per A4 page.
+  and JSON can be ticked; Download produces the file (or a ZIP for several) and the finished file
+  opens in a sheet. PNG export draws one image per A4 page.
 - **Settings** — dark/light theme, resume typeface, density, section visibility, storage usage,
   a data reset, the export panel, the saved-version history, and the release notes and changelog.
 - **History** — a Save button (or Cmd/Ctrl+S) snapshots the whole resume into the browser:
@@ -44,9 +44,8 @@ Settings → **Resume colour** switches the preview and the PDF, PNG and DOCX ex
 strict black on white.
 
 Files are named `Name_dd.mmm.yyyy-hh.mm.ext` at the moment of export, with `-1`, `-2` suffixes when
-PNG runs to several pages. On iPhone, Share opens the system sheet, where **Save Image** writes PNGs
-to Photos, **Save to Files** writes to iCloud Drive or On My iPhone, and apps such as WhatsApp appear
-with the document already attached.
+PNG runs to several pages. Download produces the file and opens it in a sheet, where **Open** shows
+it in the browser and the browser's own share button can send it on.
 
 JSON carries the state as-is. Markdown and TXT carry the same snapshot base64-encoded in a
 comment (HTML comment in Markdown, a marked block at the end of the TXT). Importing any of

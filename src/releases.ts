@@ -9,6 +9,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.6.1',
+    name: 'Import opens the picker again',
+    summary: 'Import is a native file control, the sheet offers Open, and Share is gone.',
+    notes: [
+      'Import is now a real file control in the dock instead of a scripted click on a hidden input, so iOS opens the picker reliably.',
+      'The file picker accepts .json, .md, .txt, .pdf, .docx, .png and .zip by extension.',
+      'The finished-file sheet offers Open only, which is the action that works in the app.',
+      'The Share button is removed; Download is the single way to produce a file.'
+    ]
+  },
+  {
     version: '2.6.0',
     name: 'Colour or black & white, and import from every export',
     summary: 'A resume colour setting that drives the preview and every export, and every exported format imports back.',
