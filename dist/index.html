@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#07110d" />
   <title>GMO Résumé Manager — resume &amp; experience tracker</title>
   <meta name="description" content="Track your roles, achievements and skills, and export the resume as PDF, DOCX, PNG, TXT, Markdown or JSON." />
-  <script type="module" crossorigin src="./assets/index-BOWi626V.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-C5hq7SWY.css">
+  <script type="module" crossorigin src="./assets/index-BXMu7lWu.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CurZKR3t.css">
 </head>
 <body>
   <canvas id="bg-canvas" class="bg-canvas" aria-hidden="true"></canvas>
@@ -50,19 +50,15 @@
     <span class="dock-status" id="dock-status">Saved on this device</span>
     <div class="dock-actions">
       <button class="dock-btn" type="button" data-dock="save">Save</button>
-      <label class="dock-btn" for="file-input">Import</label>
+      <label class="dock-btn file-trigger">
+        Import
+        <input type="file" id="file-input" class="file-input" accept=".json,.md,.markdown,.txt,.pdf,.docx,.png,.zip" />
+      </label>
       <button class="dock-btn" type="button" data-dock="export">Export</button>
       <button class="dock-btn" type="button" data-dock="settings">Settings</button>
-      <span class="dock-build" id="dock-build">v2.6.1 · build dev</span>
+      <span class="dock-build" id="dock-build">v2.6.3 · build dev</span>
     </div>
   </nav>
-
-  <input
-    type="file"
-    id="file-input"
-    class="file-input"
-    accept=".json,.md,.markdown,.txt,.pdf,.docx,.png,.zip"
-  />
 
 </body>
 </html>
