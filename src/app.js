@@ -1073,7 +1073,7 @@ function settingsEditor() {
       <h3 class="setting-title">Resume colour</h3>
       <div class="seg" role="group" aria-label="Resume colour">
         ${segButton('colorMode', 'color', 'Colour', s.colorMode === 'color')}
-        ${segButton('colorMode', 'bw', 'Black &amp; white', s.colorMode === 'bw')}
+        ${segButton('colorMode', 'bw', 'Black & white', s.colorMode === 'bw')}
       </div>
       <p class="setting-note">Applies to the preview and to PDF, PNG and DOCX exports. Black &amp; white prints
       every line of text in plain black on white.</p>

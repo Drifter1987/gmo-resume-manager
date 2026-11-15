@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.6.4',
+    name: 'Layout polish',
+    summary: 'Small fixes: the Black & white label, sticky panels on phones and the verify row.',
+    notes: [
+      'Settings → Resume colour showed "Black &amp; white" literally; it reads "Black & white" now.',
+      'On phones the section rail and the sub-tab strips no longer let scrolled content peek around or slide beneath them.',
+      'The Verify export / import button and its explanation sit on one tidy row.'
+    ]
+  },
+  {
     version: '2.6.3',
     name: 'Import that actually opens',
     summary: 'The file input now sits invisibly on top of the Import button.',

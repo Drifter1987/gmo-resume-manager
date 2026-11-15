@@ -265,9 +265,14 @@ body {
     overflow-x: auto;
     scrollbar-width: none;
     scroll-padding-inline: 12px;
+    /* opaque ring behind the pill so scrolled content
+       cannot peek through the rounded corners */
+    box-shadow: 0 0 0 20px var(--bg);
   }
   .rail::-webkit-scrollbar { display: none; }
   .tab { width: auto; padding: 7px 11px; }
+  /* stick below the rail strip instead of sliding under it */
+  .subtabs { top: 108px; }
 }
 
 /* ---------- buttons ---------- */
@@ -739,6 +744,16 @@ label.dock-btn { cursor: pointer; user-select: none; }
 .switch:has(input:checked)::after { transform: translateX(16px); }
 
 .setting-note { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); }
+
+.verify-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 12px;
+}
+
+.verify-row .setting-note { margin: 0; flex: 1 1 220px; }
 
 .data-row {
   display: flex;
