@@ -32,12 +32,16 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 
 | Format | What it is | Imports back |
 | --- | --- | --- |
-| PDF | Real PDF built with jsPDF, A4, selectable text | no (for reading) |
-| DOCX | Word document built in the browser, no server | no |
-| PNG | One image per A4 page, drawn on canvas | no |
+| PDF | Real PDF built with jsPDF, A4, selectable text | yes (snapshot in the keywords) |
+| DOCX | Word document built in the browser, no server | yes (snapshot in the properties) |
+| PNG | One image per A4 page, drawn on canvas | yes (snapshot in a text chunk) |
 | TXT | Plain-text resume plus a hidden data block | yes |
 | MD | Markdown resume plus a hidden data block | yes |
 | JSON | Full backup: data, order and settings | yes |
+| ZIP | Bundle of several of the above | yes (the first importable file inside) |
+
+Settings → **Resume colour** switches the preview and the PDF, PNG and DOCX exports between colour and
+strict black on white.
 
 Files are named `Name_dd.mmm.yyyy-hh.mm.ext` at the moment of export, with `-1`, `-2` suffixes when
 PNG runs to several pages. On iPhone, Share opens the system sheet, where **Save Image** writes PNGs

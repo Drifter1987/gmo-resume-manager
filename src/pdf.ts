@@ -1,18 +1,33 @@
 import { jsPDF } from 'jspdf';
+import { DATA_MARKER, encodeSnapshot } from './data';
+import { hexToRgb, paletteFor } from './palette';
 import type { ResumeState } from './types';
-import { ascii, dateRange, splitLines, splitList } from './util';
+import { ascii, dateRange, pdfText, splitLines, splitList } from './util';
 
 const MARGIN = 48;
-const INK: [number, number, number] = [24, 26, 22];
-const MUTED: [number, number, number] = [92, 100, 88];
-const GOLD: [number, number, number] = [154, 91, 0];
-const RULE: [number, number, number] = [208, 204, 192];
+
+type RGB = [number, number, number];
+type Style = 'normal' | 'bold' | 'italic' | 'bolditalic';
 
 /**
  * Real PDF output (not window.print) so it works in every browser and web view.
  * Text stays selectable because it is drawn as text, not as a screenshot.
+ * Colours, typeface and density follow the resume settings, and the full data
+ * snapshot rides along in the document keywords so the PDF can be imported back.
  */
 export function buildPdf(state: ResumeState): Blob {
+  const pal = paletteFor(state);
+  const INK = hexToRgb(pal.text) as RGB;
+  const MUTED = hexToRgb(pal.muted) as RGB;
+  const ACCENT = hexToRgb(pal.accent) as RGB;
+  const RULE = hexToRgb(pal.rule) as RGB;
+  const NAME = hexToRgb(pal.name) as RGB;
+  const HEADLINE = hexToRgb(pal.headline) as RGB;
+  const bw = pal.mode === 'bw';
+
+  const family = state.settings.font === 'serif' ? 'times' : 'helvetica';
+  const K = state.settings.density === 'compact' ? 0.92 : 1;
+
   const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -21,9 +36,9 @@ export function buildPdf(state: ResumeState): Blob {
 
   let y = MARGIN + 12;
 
-  const font = (style: 'normal' | 'bold' | 'italic' | 'bolditalic', size: number) => {
-    doc.setFont('helvetica', style);
-    doc.setFontSize(size);
+  const font = (style: Style, size: number) => {
+    doc.setFont(family, style);
+    doc.setFontSize(size * K);
   };
 
   const ensure = (height: number) => {
@@ -32,74 +47,134 @@ export function buildPdf(state: ResumeState): Blob {
     y = MARGIN;
   };
 
-  const paragraph = (
-    text: string,
-    size: number,
-    style: 'normal' | 'bold' | 'italic' | 'bolditalic',
-    color: [number, number, number],
-    gap = 2
-  ) => {
-    const value = ascii(text);
+  const paragraph = (text: string, size: number, style: Style, color: RGB, gap = 2) => {
+    const value = pdfText(text);
     if (!value.trim()) return;
     font(style, size);
     doc.setTextColor(color[0], color[1], color[2]);
     const lines = doc.splitTextToSize(value, contentWidth) as string[];
     lines.forEach((line) => {
-      ensure(size * 1.35);
+      ensure(size * K * 1.35);
       doc.text(line, MARGIN, y);
-      y += size * 1.35;
+      y += size * K * 1.35;
     });
-    y += gap;
+    y += gap * K;
+  };
+
+  const rule = (x1: number, x2: number, at: number, width: number, dotted = false) => {
+    doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+    doc.setLineWidth(width);
+    if (dotted) doc.setLineDashPattern([1, 2], 0);
+    doc.line(x1, at, x2, at);
+    if (dotted) doc.setLineDashPattern([], 0);
   };
 
   const section = (title: string) => {
-    ensure(30);
-    y += 10;
+    ensure(40);
+    y += 10 * K;
     font('bold', 8.5);
-    doc.setTextColor(GOLD[0], GOLD[1], GOLD[2]);
+    doc.setTextColor(ACCENT[0], ACCENT[1], ACCENT[2]);
     doc.setCharSpace(1.2);
-    doc.text(ascii(title).toUpperCase(), MARGIN, y);
+    doc.text(pdfText(title).toUpperCase(), MARGIN, y);
     doc.setCharSpace(0);
     y += 5;
-    doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
-    doc.setLineWidth(0.75);
-    doc.line(MARGIN, y, pageWidth - MARGIN, y);
-    y += 13;
+    rule(MARGIN, pageWidth - MARGIN, y, bw ? 0.6 : 0.75);
+    y += 13 * K;
   };
 
   const entryHead = (title: string, dates: string) => {
-    ensure(46);
+    ensure(46 * K);
     let dateWidth = 0;
     if (dates) {
       font('normal', 8.5);
-      dateWidth = doc.getTextWidth(ascii(dates)) + 14;
+      dateWidth = doc.getTextWidth(pdfText(dates)) + 14;
       doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-      doc.text(ascii(dates), pageWidth - MARGIN, y, { align: 'right' });
+      doc.text(pdfText(dates), pageWidth - MARGIN, y, { align: 'right' });
     }
     font('bold', 10.5);
     doc.setTextColor(INK[0], INK[1], INK[2]);
     const titleWidth = Math.max(contentWidth - dateWidth, 140);
-    const titleLines = doc.splitTextToSize(ascii(title), titleWidth) as string[];
+    const titleLines = doc.splitTextToSize(pdfText(title), titleWidth) as string[];
     doc.text(titleLines[0] || '', MARGIN, y);
-    y += 13;
+    y += 13 * K;
     titleLines.slice(1).forEach((line) => {
-      ensure(13);
+      ensure(13 * K);
       doc.text(line, MARGIN, y);
-      y += 13;
+      y += 13 * K;
     });
   };
 
   const bullet = (text: string, indent = 16) => {
     font('normal', 9.5);
     doc.setTextColor(INK[0], INK[1], INK[2]);
-    const lines = doc.splitTextToSize(ascii(text), contentWidth - indent) as string[];
+    doc.setFillColor(INK[0], INK[1], INK[2]);
+    const lines = doc.splitTextToSize(pdfText(text), contentWidth - indent) as string[];
     lines.forEach((line, index) => {
-      ensure(12.5);
-      if (index === 0) doc.text('-', MARGIN + 2, y);
+      ensure(12.5 * K);
+      if (index === 0) doc.circle(MARGIN + 4, y - 3 * K, 1.1, 'F');
       doc.text(line, MARGIN + indent, y);
-      y += 12.5;
+      y += 12.5 * K;
     });
     y += 1;
+  };
+
+  const certificationTable = (rows: ResumeState['certifications']) => {
+    const fractions = [0.44, 0.26, 0.15, 0.15];
+    const gap = 10;
+    const widths = fractions.map((fraction) => fraction * contentWidth);
+    const xs: number[] = [];
+    widths.reduce((x, width, index) => {
+      xs[index] = x;
+      return x + width;
+    }, MARGIN);
+    const line = 11.5 * K;
+
+    const header = () => {
+      font('bold', 7.5);
+      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.setCharSpace(0.8);
+      ['CERTIFICATION', 'ISSUER', 'ISSUED', 'EXPIRES'].forEach((label, index) => doc.text(label, xs[index], y));
+      doc.setCharSpace(0);
+      y += 5;
+      rule(MARGIN, pageWidth - MARGIN, y, 0.6);
+      y += 13 * K;
+    };
+
+    ensure(24 + line * 2 + 12);
+    header();
+
+    rows.forEach((item, index) => {
+      font('bold', 9);
+      const name = doc.splitTextToSize(pdfText(item.name), widths[0] - gap) as string[];
+      font('normal', 9);
+      const issuer = doc.splitTextToSize(pdfText(item.issuer), widths[1] - gap) as string[];
+      const issued = doc.splitTextToSize(pdfText(item.date), widths[2] - gap) as string[];
+      const expires = doc.splitTextToSize(pdfText(item.expires), widths[3]) as string[];
+      const count = Math.max(1, name.length, issuer.length, issued.length, expires.length);
+      const height = count * line + 9;
+
+      if (y + height > bottom) {
+        doc.addPage();
+        y = MARGIN;
+        header();
+      }
+
+      font('bold', 9);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
+      name.forEach((text, i) => doc.text(text, xs[0], y + i * line));
+
+      font('normal', 9);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
+      issuer.forEach((text, i) => doc.text(text, xs[1], y + i * line));
+      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      issued.forEach((text, i) => doc.text(text, xs[2], y + i * line));
+      expires.forEach((text, i) => doc.text(text, xs[3], y + i * line));
+
+      const rowBottom = y + (count - 1) * line + 5;
+      if (index < rows.length - 1) rule(MARGIN, pageWidth - MARGIN, rowBottom, 0.5, true);
+      y = rowBottom + 11 * K;
+    });
+    y += 4;
   };
 
   const p = state.profile;
@@ -107,17 +182,17 @@ export function buildPdf(state: ResumeState): Blob {
 
   if (p.name) {
     font('bold', 22);
-    doc.setTextColor(INK[0], INK[1], INK[2]);
-    const nameLines = doc.splitTextToSize(ascii(p.name), contentWidth) as string[];
+    doc.setTextColor(NAME[0], NAME[1], NAME[2]);
+    const nameLines = doc.splitTextToSize(pdfText(p.name), contentWidth) as string[];
     nameLines.forEach((line) => {
-      ensure(26);
+      ensure(26 * K);
       doc.text(line, MARGIN, y);
-      y += 26;
+      y += 26 * K;
     });
     y += 2;
   }
 
-  if (p.headline) paragraph(p.headline, 11, 'normal', [122, 76, 0], 4);
+  if (p.headline) paragraph(p.headline, 11, 'normal', HEADLINE, 4);
 
   const contact = [p.email, p.phone, p.location, p.website, p.linkedin].filter(Boolean).join('  |  ');
   if (contact) paragraph(contact, 8.5, 'normal', MUTED, 6);
@@ -139,7 +214,7 @@ export function buildPdf(state: ResumeState): Blob {
         const tags = splitList(item.tags);
         if (tags.length) paragraph(tags.join('  |  '), 8.5, 'italic', MUTED, 4);
       }
-      y += 5;
+      y += 5 * K;
     });
   }
 
@@ -147,24 +222,22 @@ export function buildPdf(state: ResumeState): Blob {
   if (s.sections.education && schools.length) {
     section('Education');
     schools.forEach((item) => {
-      const title = [item.degree, item.field].filter(Boolean).join(', ') || item.school;
+      const degree = [item.degree, item.field].filter(Boolean).join(', ');
+      const title = degree || item.school || 'Study';
       entryHead(title, dateRange(item));
-      const place = [item.school, item.location].filter(Boolean).join('  |  ');
+      const place = (degree && item.school ? [item.school, item.location] : [item.location])
+        .filter(Boolean)
+        .join('  |  ');
       if (place) paragraph(place, 9, 'italic', MUTED, 3);
       splitLines(item.details).forEach((line) => bullet(line));
-      y += 5;
+      y += 5 * K;
     });
   }
 
   const certs = state.certifications.filter((item) => item.name);
   if (s.sections.certifications && certs.length) {
     section('Certifications');
-    certs.forEach((item) => {
-      entryHead(item.name, item.date);
-      const meta = [item.issuer, item.expires ? 'expires ' + item.expires : ''].filter(Boolean).join('  |  ');
-      if (meta) paragraph(meta, 9, 'italic', MUTED, 2);
-    });
-    y += 4;
+    certificationTable(certs);
   }
 
   const projects = state.projects.filter((item) => item.name);
@@ -172,11 +245,11 @@ export function buildPdf(state: ResumeState): Blob {
     section('Projects');
     projects.forEach((item) => {
       entryHead(item.name, '');
-      if (item.link) paragraph(item.link, 8.5, 'italic', MUTED, 2);
-      if (item.description) paragraph(item.description, 9.5, 'normal', INK, 2);
+      if (item.description) paragraph(item.description, 9, 'italic', MUTED, 2);
       const tech = splitList(item.tech);
       if (tech.length) paragraph(tech.join('  |  '), 8.5, 'italic', MUTED, 3);
-      y += 5;
+      if (item.link) paragraph(item.link, 8.5, 'normal', MUTED, 3);
+      y += 5 * K;
     });
   }
 
@@ -187,48 +260,51 @@ export function buildPdf(state: ResumeState): Blob {
     let widest = 96;
     skills.forEach((item) => {
       font('bold', 9.5);
-      widest = Math.max(widest, doc.getTextWidth(ascii(item.label || 'Skills') + ':') + 14);
+      widest = Math.max(widest, doc.getTextWidth(pdfText(item.label || 'Skills') + ':') + 14);
     });
     const column = Math.min(widest, contentWidth * 0.42);
 
     skills.forEach((item) => {
-      const label = ascii(item.label || 'Skills') + ':';
+      const label = pdfText(item.label || 'Skills') + ':';
       font('bold', 9.5);
       const labelWidth = doc.getTextWidth(label);
       const indent = column;
       font('normal', 9.5);
-      const valueLines = doc.splitTextToSize(ascii(item.items), contentWidth - indent) as string[];
+      const valueLines = doc.splitTextToSize(pdfText(item.items), contentWidth - indent) as string[];
       const ownLine = labelWidth + 10 > indent;
-      const height = 12.5 * (ownLine ? 1 + valueLines.length : Math.max(1, valueLines.length));
+      const row = 12.5 * K;
+      const height = row * (ownLine ? 1 + valueLines.length : Math.max(1, valueLines.length));
 
       ensure(height + 6);
 
       font('bold', 9.5);
-      doc.setTextColor(INK[0], INK[1], INK[2]);
+      doc.setTextColor(ACCENT[0], ACCENT[1], ACCENT[2]);
       doc.text(label, MARGIN, y);
 
       font('normal', 9.5);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
       if (ownLine) {
-        y += 12.5;
+        y += row;
         valueLines.forEach((line) => {
-          ensure(12.5);
+          ensure(row);
           doc.text(line, MARGIN + 12, y);
-          y += 12.5;
+          y += row;
         });
       } else {
         valueLines.forEach((line, index) => {
-          doc.text(line, MARGIN + indent, y + index * 12.5);
+          doc.text(line, MARGIN + indent, y + index * row);
         });
-        y += 12.5 * Math.max(1, valueLines.length);
+        y += row * Math.max(1, valueLines.length);
       }
       y += 2;
     });
   }
 
   doc.setProperties({
-    title: (p.name || 'Resume') + ' — Résumé',
-    subject: p.headline || '',
-    creator: 'GMO Résumé Manager'
+    title: ascii((p.name || 'Resume') + ' - Resume'),
+    subject: pdfText(p.headline || ''),
+    creator: 'GMO Resume Manager',
+    keywords: DATA_MARKER + ':' + encodeSnapshot(state)
   });
 
   return doc.output('blob');

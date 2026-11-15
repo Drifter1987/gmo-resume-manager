@@ -39,6 +39,20 @@ export function ascii(value: string | null | undefined): string {
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
 }
 
+/** Text for the PDF base-14 fonts: Latin-1 only (umlauts and accents stay), anything else becomes "?". */
+export function pdfText(value: string | null | undefined): string {
+  return String(value == null ? '' : value)
+    .replace(/[\u2018\u2019\u201B]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u2022/g, '-')
+    .replace(/\u20AC/g, 'EUR')
+    .replace(/[\u00A0\u2007\u202F]/g, ' ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/[^\u0000-\u00FF]/g, '?');
+}
+
 export function escXml(value: string | null | undefined): string {
   return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => {
     switch (ch) {

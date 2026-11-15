@@ -9,6 +9,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.6.0',
+    name: 'Colour or black & white, and import from every export',
+    summary: 'A resume colour setting that drives the preview and every export, and every exported format imports back.',
+    notes: [
+      'New Settings → Resume colour: Colour or Black & white. It changes the live preview, PDF, PNG and DOCX exports together; in Black & white every line of text, rule and heading is plain black on white.',
+      'PDF, DOCX and PNG exports now carry the full resume snapshot inside the file (PDF keywords, DOCX document properties, a PNG text chunk), so they import back exactly. A ZIP bundle imports too.',
+      'Import recognises files by their content rather than their name, and rebuilds the same preview: content, order, typeface, density, colour mode and section switches.',
+      'Markdown and TXT exports write certifications as a proper table / delimited rows with the link kept, escape pipes, and keep multi-paragraph summaries; the fallback parsers read them back without the hidden data block.',
+      'PDF, PNG and DOCX now follow the typeface and density settings and draw certifications as a real table. Accents and umlauts survive in the PDF; DOCX keeps dashes and symbols.',
+      'Import no longer rewrites valid certificate links, and dates such as “Oct 2020 to Present” split correctly.'
+    ]
+  },
+  {
     version: '2.5.4',
     name: 'Back to a plain main branch',
     summary: 'The page lives at the repository root again, with no build output committed.',

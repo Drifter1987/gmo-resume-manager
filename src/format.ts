@@ -1,4 +1,4 @@
-import { encodeSnapshot, snapshot, wrapPayload } from './data';
+import { DATA_MARKER, encodeSnapshot, snapshot, wrapPayload } from './data';
 import type { ResumeState } from './types';
 import { dateRange, slugify, splitLines, splitList } from './util';
 
@@ -8,6 +8,20 @@ export function fileNameBase(state: ResumeState): string {
 
 export function toJson(state: ResumeState): string {
   return JSON.stringify(snapshot(state), null, 2);
+}
+
+/** A table cell: no line breaks, pipes escaped so the cell cannot split. */
+function cell(value: string | null | undefined): string {
+  return String(value == null ? '' : value)
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|')
+    .trim();
+}
+
+/** "Company · Location" that keeps an empty first half, so the position survives a re-import. */
+function pair(a: string, b: string, separator: string): string {
+  if (!a && !b) return '';
+  return b ? `${a}${separator}${b}`.trim() : a;
 }
 
 export function toMarkdown(state: ResumeState): string {
@@ -26,7 +40,7 @@ export function toMarkdown(state: ResumeState): string {
     out.push('## Experience', '');
     roles.forEach((item) => {
       out.push(`### ${item.role || 'Role'}`, '');
-      const place = [item.company, item.location].filter(Boolean).join(' · ');
+      const place = pair(item.company, item.location, ' · ');
       if (place) out.push(`*${place}*`, '');
       const dates = dateRange(item);
       if (dates) out.push(`**${dates}**`, '');
@@ -43,9 +57,9 @@ export function toMarkdown(state: ResumeState): string {
   if (s.sections.education && schools.length) {
     out.push('## Education', '');
     schools.forEach((item) => {
-      const title = [item.degree, item.field].filter(Boolean).join(', ') || item.school;
-      out.push(`### ${title}`, '');
-      const place = [item.school, item.location].filter(Boolean).join(' · ');
+      const degree = [item.degree, item.field].filter(Boolean).join(', ');
+      out.push(`### ${degree || item.school}`, '');
+      const place = degree ? pair(item.school, item.location, ' · ') : item.location ? pair('', item.location, ' · ') : '';
       if (place) out.push(`*${place}*`, '');
       const dates = dateRange(item);
       if (dates) out.push(`**${dates}**`, '');
@@ -59,11 +73,12 @@ export function toMarkdown(state: ResumeState): string {
   const certs = state.certifications.filter((item) => item.name);
   if (s.sections.certifications && certs.length) {
     out.push('## Certifications', '');
+    out.push('| Certification | Issuer | Issued | Expires | Link |');
+    out.push('| --- | --- | --- | --- | --- |');
     certs.forEach((item) => {
-      const meta = [item.issuer, item.date, item.expires ? 'expires ' + item.expires : '']
-        .filter(Boolean)
-        .join(' · ');
-      out.push(`- **${item.name}**${meta ? ' — ' + meta : ''}`);
+      out.push(
+        `| ${cell(item.name)} | ${cell(item.issuer)} | ${cell(item.date)} | ${cell(item.expires)} | ${cell(item.link)} |`
+      );
     });
     out.push('');
   }
@@ -74,7 +89,7 @@ export function toMarkdown(state: ResumeState): string {
     projects.forEach((item) => {
       out.push(`### ${item.name}`, '');
       if (item.link) out.push(`*${item.link}*`, '');
-      if (item.description) out.push(item.description, '');
+      splitLines(item.description).forEach((line) => out.push(line, ''));
       const tech = splitList(item.tech);
       if (tech.length) out.push('Tags: ' + tech.map((tag) => '`' + tag + '`').join(', '), '');
       out.push('');
@@ -84,13 +99,21 @@ export function toMarkdown(state: ResumeState): string {
   const skills = state.skills.filter((item) => item.label || item.items);
   if (s.sections.skills && skills.length) {
     out.push('## Skills', '');
-    skills.forEach((item) => out.push(`- **${item.label || 'Skills'}:** ${item.items}`));
+    skills.forEach((item) => out.push(`- **${item.label || 'Skills'}:** ${splitLines(item.items).join(', ')}`));
     out.push('');
   }
 
-  out.push(`<!-- ${'gmo-resume-data'}:${encodeSnapshot(state)} -->`, '');
+  out.push(`<!-- ${DATA_MARKER}:${encodeSnapshot(state)} -->`, '');
 
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+/** Splits a text field into pieces joined with " | ", escaping literal pipes. */
+function field(value: string | null | undefined): string {
+  return String(value == null ? '' : value)
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|')
+    .trim();
 }
 
 export function toPlainText(state: ResumeState): string {
@@ -98,7 +121,7 @@ export function toPlainText(state: ResumeState): string {
   const s = state.settings;
   const out: string[] = [];
 
-  if (p.name) out.push(p.name.toUpperCase(), '');
+  if (p.name) out.push(p.name, '');
   if (p.headline) out.push(p.headline, '');
   const contact = [p.email, p.phone, p.location, p.website, p.linkedin].filter(Boolean);
   if (contact.length) out.push(contact.join(' | '), '');
@@ -109,7 +132,7 @@ export function toPlainText(state: ResumeState): string {
     out.push('EXPERIENCE', '');
     roles.forEach((item) => {
       out.push(item.role || 'Role');
-      const place = [item.company, item.location].filter(Boolean).join(' | ');
+      const place = pair(item.company, item.location, ' | ');
       if (place) out.push(place);
       const dates = dateRange(item);
       if (dates) out.push(dates);
@@ -124,8 +147,9 @@ export function toPlainText(state: ResumeState): string {
   if (s.sections.education && schools.length) {
     out.push('EDUCATION', '');
     schools.forEach((item) => {
-      out.push([item.degree, item.field].filter(Boolean).join(', ') || item.school);
-      const place = [item.school, item.location].filter(Boolean).join(' | ');
+      const degree = [item.degree, item.field].filter(Boolean).join(', ');
+      out.push(degree || item.school);
+      const place = degree ? pair(item.school, item.location, ' | ') : item.location ? pair('', item.location, ' | ') : '';
       if (place) out.push(place);
       const dates = dateRange(item);
       if (dates) out.push(dates);
@@ -138,10 +162,9 @@ export function toPlainText(state: ResumeState): string {
   if (s.sections.certifications && certsText.length) {
     out.push('CERTIFICATIONS', '');
     certsText.forEach((item) => {
-      const meta = [item.issuer, item.date, item.expires ? 'expires ' + item.expires : '']
-        .filter(Boolean)
-        .join(' | ');
-      out.push('- ' + item.name + (meta ? ' | ' + meta : ''));
+      const cells = [item.name, item.issuer, item.date, item.expires, item.link].map(field);
+      while (cells.length > 1 && !cells[cells.length - 1]) cells.pop();
+      out.push('- ' + cells.join(' | '));
     });
     out.push('');
   }
@@ -152,7 +175,7 @@ export function toPlainText(state: ResumeState): string {
     projects.forEach((item) => {
       out.push(item.name);
       if (item.link) out.push(item.link);
-      if (item.description) out.push(item.description);
+      splitLines(item.description).forEach((line) => out.push(line));
       const tech = splitList(item.tech);
       if (tech.length) out.push('Tech: ' + tech.join(', '));
       out.push('');
@@ -162,7 +185,7 @@ export function toPlainText(state: ResumeState): string {
   const skills = state.skills.filter((item) => item.label || item.items);
   if (s.sections.skills && skills.length) {
     out.push('SKILLS', '');
-    skills.forEach((item) => out.push(`${item.label || 'Skills'}: ${item.items}`));
+    skills.forEach((item) => out.push(`${item.label || 'Skills'}: ${splitLines(item.items).join(', ')}`));
     out.push('');
   }
 

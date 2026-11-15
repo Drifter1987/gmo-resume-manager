@@ -55,8 +55,12 @@ export interface CertificationItem {
   link: string;
 }
 
+export type ColorMode = 'color' | 'bw';
+
 export interface Settings {
   theme: 'dark' | 'light';
+  /** Resume colour: coloured accents, or strictly black text on white. Applies to preview and exports. */
+  colorMode: ColorMode;
   font: 'sans' | 'serif';
   density: 'comfortable' | 'compact';
   showSummary: boolean;

@@ -1113,6 +1113,29 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* resume theme variants */
 
+/* Black & white: every colour on the paper becomes black on white (preview, print and exports). */
+:root[data-color="bw"] .resume {
+  --paper: #ffffff;
+  --paper-ink: #000000;
+  --paper-muted: #000000;
+  --paper-line: #000000;
+  --paper-gold: #000000;
+  background: #ffffff;
+  color: #000000;
+}
+:root[data-color="bw"] .r-name,
+:root[data-color="bw"] .r-headline,
+:root[data-color="bw"] .r-dot,
+:root[data-color="bw"] .r-entry-title,
+:root[data-color="bw"] .r-skill-label,
+:root[data-color="bw"] .r-table td + td::before { color: #000000; }
+:root[data-color="bw"] .r-section-title { border-bottom-width: 1px; }
+:root[data-color="bw"] .r-table th { border-bottom-color: #000000; }
+:root[data-color="bw"] .r-table td { border-bottom-color: #000000; }
+:root[data-color="bw"] .resume a { color: #000000; }
+:root[data-color="bw"] .empty-actions .btn-primary { background: #000000; border-color: #000000; color: #ffffff; }
+:root[data-color="bw"] .empty-actions .btn { background: #ffffff; border-color: #000000; color: #000000; }
+
 :root[data-font="serif"] .resume {
   font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
 }
@@ -1305,4 +1328,8 @@ input:disabled { opacity: 0.45; cursor: not-allowed; }
   .r-contact a { border: 0; }
   .r-section { margin-top: 16px; }
   .r-entry { margin-bottom: 12px; }
+  :root[data-color="bw"] .r-headline,
+  :root[data-color="bw"] .r-section-title,
+  :root[data-color="bw"] .r-skill-label { color: #000; }
+  :root[data-color="bw"] .r-section-title { border-bottom-color: #000; }
 }

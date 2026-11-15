@@ -7,11 +7,12 @@ import { changelogEditor, releasesEditor } from './releases';
 import { buildDocx } from './docx';
 import { buildPdf } from './pdf';
 import { toJson, toMarkdown, toPlainText } from './format';
-import { parseImport } from './parse';
+import { parseImportBytes } from './parse';
 import { APP_VERSION, BUILD_NUMBER } from './version';
 import { shareFiles, saveBlob } from './util';
 import { buildPngPages } from './png';
 import { createZip } from './zip';
+import { runRoundTrip, formatReport } from './selftest';
 
 const STORAGE_KEY = 'gmoResumeManager.v2';
 const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
@@ -144,6 +145,7 @@ const COLLECTION_KEYS = Object.keys(COLLECTIONS);
 function defaultSettings() {
   return {
     theme: 'dark',
+    colorMode: 'color',
     font: 'sans',
     density: 'comfortable',
     showSummary: true,
@@ -386,9 +388,11 @@ function parseTableRows(lines) {
  * rows become certifications, so nothing is lost.
  */
 function repairImportedContent(base) {
+  // Only blank out links that are clearly not links; never rewrite a valid one, so
+  // export -> import leaves every field exactly as typed.
   base.certifications.forEach((item) => {
-    item.link = normaliseLink(item.link);
-    if (item.expires) item.expires = item.expires.replace(/^[—–-]+$/, '').trim();
+    if (item.link && !validLink(item.link)) item.link = '';
+    if (/^[—–-]+$/.test(item.expires)) item.expires = '';
   });
 
   const name = base.profile.name || '';
@@ -398,7 +402,7 @@ function repairImportedContent(base) {
   }
 
   const summary = base.profile.summary || '';
-  if (summary.indexOf('|') === -1) return;
+  if (!/^\s*\|.*\|/m.test(summary)) return;
 
   const lines = summary.split(/\r?\n/);
   const tableLines = [];
@@ -437,6 +441,7 @@ function normalizeSettings(raw) {
   if (!raw || typeof raw !== 'object') return out;
 
   if (raw.theme === 'light' || raw.theme === 'dark') out.theme = raw.theme;
+  if (raw.colorMode === 'bw' || raw.colorMode === 'color') out.colorMode = raw.colorMode;
   if (raw.font === 'serif' || raw.font === 'sans') out.font = raw.font;
   if (raw.density === 'compact' || raw.density === 'comfortable') out.density = raw.density;
   if (typeof raw.showSummary === 'boolean') out.showSummary = raw.showSummary;
@@ -1027,12 +1032,12 @@ function exportEditor() {
 
     <div class="panel-head panel-head-tight">
       <h2>Import</h2>
-      <p class="panel-sub">Use Import in the bottom bar to choose a file, or drop one here. JSON restores
-      everything; Markdown and TXT restore the resume.</p>
+      <p class="panel-sub">Use Import in the bottom bar to choose a file, or drop one here. Every format
+      this app exports restores the same resume: content, order, colour mode and settings.</p>
     </div>
     <div class="drop-zone" id="drop-zone">
       <strong>Drop a resume file here</strong>
-      <span>.json, .md or .txt</span>
+      <span>.json, .md, .txt, .pdf, .docx, .png or .zip</span>
     </div>
   `;
 }
@@ -1065,6 +1070,16 @@ function settingsEditor() {
         ${segButton('theme', 'light', 'Light', s.theme === 'light')}
       </div>
       <p class="setting-note">Dark is the default. Light keeps the same green and gold accents.</p>
+    </section>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Resume colour</h3>
+      <div class="seg" role="group" aria-label="Resume colour">
+        ${segButton('colorMode', 'color', 'Colour', s.colorMode === 'color')}
+        ${segButton('colorMode', 'bw', 'Black &amp; white', s.colorMode === 'bw')}
+      </div>
+      <p class="setting-note">Applies to the preview and to PDF, PNG and DOCX exports. Black &amp; white prints
+      every line of text in plain black on white.</p>
     </section>
 
     <section class="setting-block">
@@ -1138,6 +1153,11 @@ function settingsEditor() {
         <span>Build</span>
         <span class="mono">${esc(BUILD_NUMBER)}</span>
       </div>
+      <div class="verify-row">
+        <button class="btn" type="button" data-action="verify">Verify export / import</button>
+        <span class="setting-note">Builds every export, imports each one back and compares the resume
+        field by field. About a second. Nothing is downloaded or overwritten.</span>
+      </div>
       <div class="danger-zone">
         <button class="btn btn-danger" type="button" data-action="reset">Clear all data</button>
         <button class="btn btn-danger" type="button" data-action="clear-history">Clear history</button>
@@ -1184,6 +1204,7 @@ function renderEditor() {
 function applyAppearance() {
   const root = document.documentElement;
   root.dataset.theme = state.settings.theme;
+  root.dataset.color = state.settings.colorMode;
   root.dataset.font = state.settings.font;
   root.dataset.density = state.settings.density;
 }
@@ -1373,12 +1394,12 @@ function renderPreview() {
 /* -------------------------------------------------------------------- */
 
 const EXPORT_FORMATS = {
-  pdf: { label: 'PDF', ext: 'pdf', description: 'A4, one file, selectable text.' },
-  docx: { label: 'DOCX', ext: 'docx', description: 'Word document for editors.' },
-  png: { label: 'PNG', ext: 'png', description: 'One image per page, for sharing.' },
-  txt: { label: 'TXT', ext: 'txt', description: 'Plain text with the data block.' },
-  md: { label: 'MD', ext: 'md', description: 'Markdown, imports back.' },
-  json: { label: 'JSON', ext: 'json', description: 'Full backup, settings included.' }
+  pdf: { label: 'PDF', ext: 'pdf', description: 'A4, selectable text. Imports back.' },
+  docx: { label: 'DOCX', ext: 'docx', description: 'Word document. Imports back.' },
+  png: { label: 'PNG', ext: 'png', description: 'One image per page. Imports back.' },
+  txt: { label: 'TXT', ext: 'txt', description: 'Plain text. Imports back.' },
+  md: { label: 'MD', ext: 'md', description: 'Markdown. Imports back.' },
+  json: { label: 'JSON', ext: 'json', description: 'Full backup. Imports back.' }
 };
 
 const exportSelection = { pdf: true, docx: false, png: false, txt: false, md: false, json: false };
@@ -1493,10 +1514,14 @@ function exportCopy() {
 
 function importFile(file) {
   const reader = new FileReader();
+  const resetInput = () => {
+    const input = document.getElementById('file-input');
+    if (input) input.value = '';
+  };
 
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
-      const result = parseImport(file.name || '', String(reader.result));
+      const result = await parseImportBytes(file.name || '', new Uint8Array(reader.result));
       state = normalize(result.state);
       applyAppearance();
       goTo('profile');
@@ -1507,17 +1532,15 @@ function importFile(file) {
     } catch (error) {
       toast(error && error.message ? error.message : 'Could not import that file', true);
     }
-    const input = document.getElementById('file-input');
-    if (input) input.value = '';
+    resetInput();
   };
 
   reader.onerror = () => {
     toast('That file could not be read', true);
-    const input = document.getElementById('file-input');
-    if (input) input.value = '';
+    resetInput();
   };
 
-  reader.readAsText(file);
+  reader.readAsArrayBuffer(file);
 }
 
 function loadExample() {
@@ -1529,6 +1552,25 @@ function loadExample() {
   save();
   flushSave();
   toast('Sample resume loaded');
+}
+
+async function runVerify() {
+  toast('Running the export / import check…');
+  const button = document.querySelector('[data-action="verify"]');
+  if (button) button.disabled = true;
+  try {
+    const report = await runRoundTrip();
+    if (report.ok) {
+      toast('Verify passed: ' + report.passed + '/' + report.total + ' round trips exact');
+    } else {
+      console.error('[GMO resume verify]', formatReport(report));
+      toast('Verify found ' + report.failures.length + ' problem(s) — details in the console', true);
+    }
+  } catch (error) {
+    console.error(error);
+    toast('Verify could not run: ' + (error && error.message ? error.message : 'unknown error'), true);
+  }
+  if (button) button.disabled = false;
 }
 
 function handleAction(action, button) {
@@ -1586,6 +1628,11 @@ function handleAction(action, button) {
     return;
   }
 
+  if (action === 'verify') {
+    runVerify();
+    return;
+  }
+
   if (action === 'reset') {
     if (!window.confirm('Delete everything and start from an empty resume?')) return;
     state = emptyState();
@@ -1638,6 +1685,7 @@ function handleAction(action, button) {
 
 function applySetting(key, value) {
   if (key === 'theme') state.settings.theme = value === 'light' ? 'light' : 'dark';
+  else if (key === 'colorMode') state.settings.colorMode = value === 'bw' ? 'bw' : 'color';
   else if (key === 'font') state.settings.font = value === 'serif' ? 'serif' : 'sans';
   else if (key === 'density') state.settings.density = value === 'compact' ? 'compact' : 'comfortable';
   else return;
