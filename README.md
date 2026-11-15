@@ -27,6 +27,11 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   a data reset, the export panel, the saved-version history, and the release notes and changelog.
 - **History** — a Save button (or Cmd/Ctrl+S) snapshots the whole resume into the browser:
   up to 40 versions, each with restore, download and delete.
+- **Screening** — a tab that scores the resume against the methods recruiters actually use: ATS
+  parsing, the recruiter skim, a rubric against the advert's keywords, achievements, timeline
+  gaps, STAR readiness, skills, verifiable certifications, working portfolio links, a
+  blind-screening view, and length. The LLM section builds a ready-to-send prompt to paste into
+  any chat model next to the exported .md file.
 
 ## Exports and round trips
 
@@ -97,6 +102,8 @@ overridable with the `BUILD_NUMBER` environment variable).
 - `src/pdf.ts` / `src/docx.ts` / `src/zip.ts` / `src/png.ts` — the file writers (PNG draws one
   canvas per A4 page).
 - `src/releases.ts` — release notes and changelog content.
+- `src/screening.ts` — the screening checks (ATS parse, skim, rubric, achievements, timeline,
+  interview, skills, certifications, links, blind view, length) and the LLM prompt builder.
 - `src/styles.css` — theme, layout, editor, resume paper and print styles.
 
 Printing still works through the browser's own dialog (`Print` in the preview toolbar),

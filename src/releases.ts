@@ -9,6 +9,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.7.0',
+    name: 'Screening checks',
+    summary: 'A Screening tab that scores the resume against the methods recruiters use, with a ready LLM prompt.',
+    notes: [
+      'New Screening tab: ATS parse, recruiter skim, rubric against the advert, achievements, timeline, STAR readiness, skills, certifications, portfolio links, a blind-screening view, and length.',
+      'Set the target role and the advert keywords; the rubric re-scores as you type and both fill the LLM prompt.',
+      'The LLM section builds a ready-to-send prompt: copy it, export the .md, and attach both to any chat model.'
+    ]
+  },
+  {
     version: '2.6.4',
     name: 'Layout polish',
     summary: 'Small fixes: the Black & white label, sticky panels on phones and the verify row.',

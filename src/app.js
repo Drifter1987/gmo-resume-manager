@@ -13,6 +13,7 @@ import { saveBlob } from './util';
 import { buildPngPages } from './png';
 import { createZip } from './zip';
 import { runRoundTrip, formatReport } from './selftest';
+import { evaluateResume, buildLlmPrompt } from './screening';
 
 const STORAGE_KEY = 'gmoResumeManager.v2';
 const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
@@ -150,6 +151,8 @@ function defaultSettings() {
     density: 'comfortable',
     showSummary: true,
     showTags: true,
+    target: '',
+    keywords: '',
     sections: { experience: true, education: true, certifications: true, projects: true, skills: true }
   };
 }
@@ -446,6 +449,8 @@ function normalizeSettings(raw) {
   if (raw.density === 'compact' || raw.density === 'comfortable') out.density = raw.density;
   if (typeof raw.showSummary === 'boolean') out.showSummary = raw.showSummary;
   if (typeof raw.showTags === 'boolean') out.showTags = raw.showTags;
+  if (typeof raw.target === 'string') out.target = raw.target;
+  if (typeof raw.keywords === 'string') out.keywords = raw.keywords;
 
   if (raw.sections && typeof raw.sections === 'object') {
     ['experience', 'education', 'certifications', 'projects', 'skills'].forEach((key) => {
@@ -1163,12 +1168,135 @@ function settingsEditor() {
   `;
 }
 
+/* --- screening: how the resume survives the methods recruiters use --- */
+
+let screenTimer = null;
+
+function screeningHub() {
+  return `
+    <div class="panel-head">
+      <h2>Screening</h2>
+      <p class="panel-sub">How this resume survives the methods recruiters actually use. Every check is
+      computed in the browser from what you have typed — nothing is sent anywhere.</p>
+    </div>
+
+    <section class="setting-block">
+      <h3 class="setting-title">Target</h3>
+      <div class="form-grid">
+        ${field('Role you are applying for', 'settings.target', state.settings.target, 'Senior Test Manager', {
+          span: 'span-2'
+        })}
+        ${field('Advert keywords (comma-separated)', 'settings.keywords', state.settings.keywords, 'ISTQB, ISO 26262, HiL, ASPICE', {
+          span: 'span-2'
+        })}
+      </div>
+      <p class="setting-note">The Rubric check scores the resume against these terms; both also fill the
+      LLM prompt. The checks re-run as you type.</p>
+    </section>
+
+    <div id="screen-results">${screenResultsHtml()}</div>
+  `;
+}
+
+function screenResultsHtml() {
+  const report = evaluateResume(state);
+  const prompt = buildLlmPrompt(state, report);
+  const llm = report.checks.find((check) => check.id === 'llm') || null;
+  const rest = report.checks.filter((check) => check.id !== 'llm');
+
+  return `
+    <div class="screen-overall">
+      <span class="screen-total">${report.score}</span>
+      <span>/ 100 — the average across the scored checks</span>
+    </div>
+    ${rest.map((check) => screenCard(check, report)).join('')}
+    ${llm ? llmCard(llm, prompt) : ''}
+  `;
+}
+
+function screenCard(check, report) {
+  const cls = check.status === 'pass' ? 'ok' : check.status === 'warn' ? 'warn' : check.status === 'fail' ? 'bad' : 'info';
+  return `<article class="screen-card is-${cls}">
+    <div class="screen-head">
+      <span class="screen-score">${check.status === 'info' ? '—' : check.score}</span>
+      <span class="screen-name">${esc(check.name)}</span>
+      <span class="screen-status">${esc(check.status)}</span>
+    </div>
+    <p class="screen-summary">${esc(check.summary)}</p>
+    ${
+      check.findings.length
+        ? `<ul class="screen-findings">${check.findings
+            .map((finding) => `<li class="is-${finding.status}">${esc(finding.text)}</li>`)
+            .join('')}</ul>`
+        : ''
+    }
+    ${check.id === 'blind' && report.blindText ? `<pre class="prompt-box">${esc(report.blindText)}</pre>` : ''}
+  </article>`;
+}
+
+function llmCard(check, prompt) {
+  return `<article class="screen-card is-info">
+    <div class="screen-head">
+      <span class="screen-score">—</span>
+      <span class="screen-name">${esc(check.name)}</span>
+      <span class="screen-status">info</span>
+    </div>
+    <p class="screen-summary">${esc(check.summary)}</p>
+    <ul class="screen-findings">
+      <li>1. Export the resume as Markdown with the button below.</li>
+      <li>2. Copy the prompt with the button below.</li>
+      <li>3. Paste the prompt into any chat model and attach the .md file.</li>
+    </ul>
+    <div class="screen-actions">
+      <button class="btn" type="button" data-action="copy-llm">Copy prompt</button>
+      <button class="btn" type="button" data-action="export-md">Export resume as .md</button>
+    </div>
+    <pre class="prompt-box">${esc(prompt)}</pre>
+  </article>`;
+}
+
+function scheduleScreenRefresh() {
+  clearTimeout(screenTimer);
+  screenTimer = setTimeout(() => refreshScreenResults(false), 350);
+}
+
+function refreshScreenResults(announce) {
+  const host = document.getElementById('screen-results');
+  if (!host) return;
+  host.innerHTML = screenResultsHtml();
+  if (announce) toast('Checks re-run');
+}
+
+function copyRaw(text, message) {
+  const done = () => toast(message);
+  const failed = () => toast('Could not copy — select the text in the box and copy it by hand', true);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done, failed));
+  } else {
+    legacyCopy(text, done, failed);
+  }
+}
+
+async function exportScreenMd() {
+  const name = slugify(state.profile.name || 'resume') + '-resume.md';
+  try {
+    const blob = new Blob([toMarkdown(state)], { type: 'text/markdown' });
+    const result = await saveBlob(blob, name);
+    if (result === 'downloaded') toast('Markdown saved — attach it to the LLM chat');
+    else if (result === 'opened') showExportSheet(blob, name, 'md');
+  } catch (error) {
+    console.error(error);
+    toast('Could not write that file', true);
+  }
+}
+
 const SECTIONS = [
   { id: 'profile', label: 'Profile', group: 'main', render: profileEditor },
   { id: 'experience', label: 'Experience', group: 'main', render: experienceEditor },
   { id: 'education', label: 'Education', group: 'main', render: educationHub },
   { id: 'projects', label: 'Projects', group: 'main', render: projectsEditor },
   { id: 'skills', label: 'Skills', group: 'main', render: skillsEditor },
+  { id: 'screening', label: 'Screening', group: 'tool', render: screeningHub },
   { id: 'settings', label: 'Settings', group: 'utility', render: settingsHub }
 ];
 
@@ -1608,6 +1736,21 @@ function handleAction(action, button) {
     return;
   }
 
+  if (action === 'copy-llm') {
+    copyRaw(buildLlmPrompt(state, evaluateResume(state)), 'Prompt copied — paste it into any chat model');
+    return;
+  }
+
+  if (action === 'export-md') {
+    exportScreenMd();
+    return;
+  }
+
+  if (action === 'screen-run') {
+    refreshScreenResults(true);
+    return;
+  }
+
   if (action === 'reset') {
     if (!window.confirm('Delete everything and start from an empty resume?')) return;
     state = emptyState();
@@ -1762,6 +1905,8 @@ function onPanelInput(event) {
   setPath(state, path, value);
 
   if (path.indexOf('settings.') === 0) applyAppearance();
+
+  if (path === 'settings.target' || path === 'settings.keywords') scheduleScreenRefresh();
 
   save();
   renderPreview();

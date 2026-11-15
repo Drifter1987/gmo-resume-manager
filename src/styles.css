@@ -1300,6 +1300,86 @@ label.dock-btn { cursor: pointer; user-select: none; }
   color: #ffe9e5;
 }
 
+/* ---------- screening ---------- */
+
+.screen-overall {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--gold-line);
+  border-radius: 12px;
+  background: var(--gold-soft);
+}
+
+.screen-total { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--gold); }
+.screen-overall > span:last-child { font-size: 12px; color: var(--muted); }
+
+.screen-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  background: var(--panel-2);
+}
+
+.screen-card.is-ok { border-color: var(--green-line); }
+.screen-card.is-warn { border-color: var(--gold-line); }
+.screen-card.is-bad { border-color: rgba(224, 140, 125, 0.45); }
+
+.screen-head { display: flex; align-items: center; gap: 10px; }
+
+.screen-score {
+  min-width: 30px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.screen-name { font-weight: 700; font-size: 13.5px; }
+
+.screen-status {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.screen-card.is-ok .screen-status { color: var(--green); }
+.screen-card.is-warn .screen-status { color: var(--gold); }
+.screen-card.is-bad .screen-status { color: var(--danger); }
+
+.screen-summary { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+
+.screen-findings { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; }
+.screen-findings li.is-pass { color: var(--green); }
+.screen-findings li.is-warn { color: var(--gold); }
+.screen-findings li.is-fail { color: var(--danger); }
+
+.screen-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+
+.prompt-box {
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(6, 16, 11, 0.72);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+  user-select: all;
+}
+
+:root[data-theme="light"] .prompt-box { background: #fbfdfb; }
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 1020px) {

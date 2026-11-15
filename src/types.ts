@@ -65,6 +65,10 @@ export interface Settings {
   density: 'comfortable' | 'compact';
   showSummary: boolean;
   showTags: boolean;
+  /** Target role for the screening checks and the LLM prompt. */
+  target: string;
+  /** Comma-separated advert keywords for the rubric check. */
+  keywords: string;
   sections: {
     experience: boolean;
     education: boolean;
