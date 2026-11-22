@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#07110d" />
   <title>GMO Résumé Manager — resume &amp; experience tracker</title>
   <meta name="description" content="Track your roles, achievements and skills, and export the resume as PDF, DOCX, PNG, TXT, Markdown or JSON." />
-  <script type="module" crossorigin src="./assets/index-C1ND6jGm.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DhUNS_L2.css">
+  <script type="module" crossorigin src="./assets/index-Ae2GUXSF.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-C4QpBTHq.css">
 </head>
 <body>
   <canvas id="bg-canvas" class="bg-canvas" aria-hidden="true"></canvas>
@@ -28,7 +28,7 @@
         </span>
         <div class="preview-tools">
           <div class="region-picker">
-            <button class="region-btn" type="button" id="region-btn" aria-haspopup="listbox" aria-expanded="false"
+            <button class="region-btn" type="button" id="region-btn" aria-haspopup="dialog" aria-expanded="false"
               title="Hiring region: sets the screening rules and the AI prompt">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.6" />
@@ -36,11 +36,12 @@
                   fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
               </svg>
               <span id="region-label">EMEA</span>
+              <span class="region-badge" id="region-badge" hidden></span>
               <svg class="region-caret" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
-            <div class="region-menu" id="region-menu" role="listbox" aria-label="Hiring region" hidden></div>
+            <div class="region-menu" id="region-menu" role="dialog" aria-label="Hiring region" hidden></div>
           </div>
           <span class="flag-tally" id="flag-tally" role="status" aria-live="polite"></span>
           <label class="switch-toggle" title="Highlight every field that breaks a resume rule">
