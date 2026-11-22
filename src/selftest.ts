@@ -1,33 +1,81 @@
 /*
- * Round-trip verification: builds every export from a state, imports it back,
- * and compares the rebuilt state against the original. Exposed as
- * window.__gmoResumeTest() from the console, and as the "Verify" button in
- * Settings → Data, so the export/import chain can be checked on any device.
+ * Round-trip and variant verification.
+ *
+ * Three layers, all runnable on the device:
+ *  1. Format round trips — build every export from a state, import it back and compare
+ *     field by field. JSON, Markdown and TXT for every variant; the binary writers
+ *     (PDF, DOCX, PNG, ZIP) once, because they are the slow ones.
+ *  2. Region variants — a resume filled in for each of the six markets, with the fields
+ *     that market expects, so the region-driven profile fields are exercised too.
+ *  3. Random variants — deterministic pseudo-random resumes with awkward data (umlauts,
+ *     CJK, pipes, empty sections, expired certificates, duplicated skills), checked for
+ *     export/import fidelity and for the screening report staying sane.
+ *
+ * Exposed as the "Verify export / import" button in Settings → Data and as
+ * window.__gmoResumeTest() in the console.
  */
 import { buildDocx } from './docx';
 import { toJson, toMarkdown, toPlainText } from './format';
 import { parseImportBytes } from './parse';
 import { buildPdf } from './pdf';
 import { buildPngPages } from './png';
+import { evaluateResume } from './screening';
 import { createZip } from './zip';
+import type { Profile, RegionId, ResumeState } from './types';
 import { APP_VERSION } from './version';
 
-const P = (name, ...rest) => ({
-  name,
-  headline: 'Test engineer · colour round trip',
-  email: 'test@example.com',
-  phone: '+49 177 000 000',
-  location: 'München, Germany',
-  website: 'example.dev',
-  linkedin: 'linkedin.com/in/test-user',
-  summary: 'First paragraph with | pipe and an umlaut: äöü — dash.\n\nSecond paragraph after a blank line.'
-});
+const REGIONS: RegionId[] = ['emea', 'us', 'gcc', 'apac', 'latam', 'anz'];
 
-const PROFILES = [P('Ada Lovelace'), P('Åse Möller'), P('李小龙')];
+/** A 1×1 transparent PNG, used to prove a photo survives the round trip. */
+const TINY_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-function sampleState(profile) {
+function profile(name: string, extra: Partial<Profile> = {}): Profile {
   return {
-    profile,
+    name,
+    headline: 'Test engineer · colour round trip',
+    email: 'test@example.com',
+    phone: '+49 177 000 000',
+    location: 'München, Germany',
+    website: 'example.dev',
+    linkedin: 'linkedin.com/in/test-user',
+    summary: 'First paragraph with | pipe and an umlaut: äöü — dash.\n\nSecond paragraph after a blank line.',
+    photo: '',
+    nationality: '',
+    workAuth: '',
+    availability: '',
+    dateOfBirth: '',
+    maritalStatus: '',
+    ...extra
+  };
+}
+
+/** Profile fields the region expects, so each market's builder fields get exercised. */
+function regionProfile(base: Profile, region: RegionId, withPhoto: boolean): Profile {
+  const next: Profile = { ...base };
+  if (withPhoto) next.photo = TINY_PNG;
+  if (region === 'gcc') {
+    next.nationality = 'German';
+    next.workAuth = 'Requires sponsorship';
+    next.availability = 'From March 2027, two months notice';
+    next.maritalStatus = 'Single';
+  } else if (region === 'anz') {
+    next.workAuth = 'Australian permanent resident';
+  } else if (region === 'emea') {
+    next.nationality = 'German';
+    next.dateOfBirth = '14 March 1992';
+  } else if (region === 'apac') {
+    next.dateOfBirth = '14 March 1992';
+  } else if (region === 'latam') {
+    next.dateOfBirth = '14 March 1992';
+    next.maritalStatus = 'Single';
+  }
+  return next;
+}
+
+function sampleState(profileData: Profile, region: RegionId): ResumeState {
+  return {
+    profile: profileData,
     experience: [
       {
         id: 'e1',
@@ -38,7 +86,7 @@ function sampleState(profile) {
         end: '',
         current: true,
         highlights:
-          'Led the | pipe | escape study\nBuilt the pipeline from nothing.\nOwned the review rota.',
+          'Led the | pipe | escape study\nBuilt the pipeline from nothing, cutting latency 40%.\nOwned the review rota across 3 teams.',
         tags: 'TypeScript, WebGL, data round trips'
       },
       {
@@ -49,7 +97,7 @@ function sampleState(profile) {
         start: 'Jan 2018',
         end: 'Sep 2020',
         current: false,
-        highlights: 'Shipped the thing.\nFixed the other thing.',
+        highlights: 'Shipped the thing to 12 markets.\nFixed the other thing, cutting tickets 18%.',
         tags: ''
       }
     ],
@@ -67,7 +115,14 @@ function sampleState(profile) {
     ],
     certifications: [
       { id: 'c1', name: 'MATLAB Onramp', issuer: 'MathWorks', date: 'Jan 2021', expires: '', link: '' },
-      { id: 'c2', name: 'ISO 26262 | Functional Safety', issuer: 'Akkodis', date: 'Feb 2021', expires: 'Jul 2027', link: 'https://example.com/cert/iso' },
+      {
+        id: 'c2',
+        name: 'ISO 26262 | Functional Safety',
+        issuer: 'Akkodis',
+        date: 'Feb 2021',
+        expires: 'Jul 2027',
+        link: 'https://example.com/cert/iso'
+      },
       { id: 'c3', name: 'Deep Learning', issuer: 'Vector', date: 'Mar 2021', expires: '', link: '' }
     ],
     projects: [
@@ -90,20 +145,23 @@ function sampleState(profile) {
       density: 'compact',
       showSummary: true,
       showTags: true,
+      target: 'Senior test engineer',
+      keywords: 'ISO 26262, HIL, test management, automotive',
+      region,
       sections: { experience: true, education: true, certifications: true, projects: true, skills: false }
     }
   };
 }
 
 /** Compare two states field by field; returns a list of differences. */
-function diff(expected, actual, path = '', out = []) {
+function diff(expected: unknown, actual: unknown, path = '', out: string[] = []): string[] {
   if (typeof expected !== typeof actual) {
     out.push(path + ' (type)');
     return out;
   }
   if (Array.isArray(expected)) {
     if (!Array.isArray(actual) || expected.length !== actual.length) {
-      out.push(`${path} (length ${expected.length} vs ${actual ? actual.length : 'none'})`);
+      out.push(`${path} (length ${expected.length} vs ${Array.isArray(actual) ? actual.length : 'none'})`);
       return out;
     }
     expected.forEach((value, index) => diff(value, actual[index], `${path}[${index}]`, out));
@@ -114,18 +172,48 @@ function diff(expected, actual, path = '', out = []) {
       out.push(path + ' (missing)');
       return out;
     }
-    Object.keys(expected).forEach((key) => diff(expected[key], actual[key], path ? path + '.' + key : key, out));
+    Object.keys(expected as Record<string, unknown>).forEach((key) =>
+      diff(
+        (expected as Record<string, unknown>)[key],
+        (actual as Record<string, unknown>)[key],
+        path ? path + '.' + key : key,
+        out
+      )
+    );
     return out;
   }
-  if (expected !== actual) out.push(path + ': "' + expected + '" → "' + actual + '"');
+  if (expected !== actual) out.push(path + ': "' + String(expected) + '" → "' + String(actual) + '"');
   return out;
 }
 
-async function* buildAll(state) {
+function flatten(state: ResumeState): ResumeState {
+  // Compare everything the writers and parsers must carry, ignoring ids (parsers cannot know them).
+  const clean = JSON.parse(JSON.stringify(state)) as ResumeState;
+  const drop = (list: Array<{ id: string }> | undefined) =>
+    (list || []).forEach((item) => {
+      delete item.id;
+    });
+  drop(clean.experience);
+  drop(clean.education);
+  drop(clean.certifications);
+  drop(clean.projects);
+  drop(clean.skills);
+  return clean;
+}
+
+interface BuiltFile {
+  name: string;
+  blob: Blob;
+  file: string;
+}
+
+async function* buildAll(state: ResumeState, includeBinary: boolean): AsyncGenerator<BuiltFile> {
   const stamp = '01.jan.2027-10.00';
   yield { name: 'JSON', blob: new Blob([toJson(state)], { type: 'application/json' }), file: stamp + '.json' };
   yield { name: 'Markdown', blob: new Blob([toMarkdown(state)], { type: 'text/markdown' }), file: stamp + '.md' };
   yield { name: 'TXT', blob: new Blob([toPlainText(state)], { type: 'text/plain' }), file: stamp + '.txt' };
+  if (!includeBinary) return;
+
   yield { name: 'PDF', blob: buildPdf(state), file: stamp + '.pdf' };
   yield { name: 'DOCX', blob: buildDocx(state), file: stamp + '.docx' };
 
@@ -139,70 +227,252 @@ async function* buildAll(state) {
   }
 
   const jsonBytes = new Uint8Array(await new Blob([toJson(state)]).arrayBuffer());
+  const mdBytes = new Uint8Array(await new Blob([toMarkdown(state)]).arrayBuffer());
   yield {
     name: 'ZIP bundle',
     blob: new Blob([createZip([
       { name: stamp + '.json', data: jsonBytes },
-      { name: stamp + '.md', data: new Uint8Array(await new Blob([toMarkdown(state)]).arrayBuffer()) }
+      { name: stamp + '.md', data: mdBytes }
     ])], { type: 'application/zip' }),
     file: stamp + '.zip'
   };
 }
 
-function flatten(state) {
-  // Compare everything the writers and parsers are expected to carry, ignoring ids
-  // (parsers cannot know them) and skill items written as one line.
-  const clean = JSON.parse(JSON.stringify(state));
-  const drop = (list) =>
-    (list || []).forEach((item) => {
-      delete item.id;
-    });
-  drop(clean.experience);
-  drop(clean.education);
-  drop(clean.certifications);
-  drop(clean.projects);
-  drop(clean.skills);
-  return clean;
+/** Deterministic pseudo-random generator, so a failing variant can be reproduced. */
+function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-export async function runRoundTrip() {
-  const results = [];
-  const failures = [];
+const NAMES = ['Ada Lovelace', 'Åse Möller', '李小龙', 'Zoë d’Arc', 'محمد الأحمد', 'Jean-Luc Picard|X'];
+const BULLETS = [
+  'Cut cycle time 30% across 4 lines.',
+  'A bullet with a | pipe | and a — dash.',
+  '短句：提升 25%。',
+  'No numbers here at all, just a duty.',
+  'A very long bullet that runs on and on about process, documentation, and the many meetings required to keep a programme of work moving forward together.'
+];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  for (const profile of PROFILES) {
-    const original = sampleState(profile);
-    const expected = flatten(original);
+function randomState(rng: () => number, index: number): ResumeState {
+  const pick = <T,>(list: T[]): T => list[Math.floor(rng() * list.length)];
+  const roleCount = Math.floor(rng() * 3);
+  const roles = Array.from({ length: roleCount }, (unused, at) => ({
+    id: 'r' + at,
+    role: rng() > 0.2 ? pick(['Test engineer', 'Validation lead', 'QA manager']) : '',
+    company: rng() > 0.2 ? 'Company ' + at : '',
+    location: rng() > 0.5 ? 'Remote' : 'Munich, Germany',
+    start: rng() > 0.15 ? pick(MONTHS) + ' ' + (2014 + Math.floor(rng() * 10)) : '',
+    end: rng() > 0.5 ? pick(MONTHS) + ' ' + (2018 + Math.floor(rng() * 6)) : '',
+    current: rng() > 0.7,
+    highlights: Array.from({ length: Math.floor(rng() * 4) }, () => pick(BULLETS)).join('\n'),
+    tags: rng() > 0.5 ? 'HiL, CANoe, ISO 26262' : ''
+  }));
 
-    for await (const item of buildAll(original)) {
+  const skills = Array.from({ length: Math.floor(rng() * 4) }, (unused, at) => ({
+    id: 's' + at,
+    label: pick(['Languages', 'Platforms', 'Skills', '']),
+    items: rng() > 0.4 ? pick(['TypeScript, SQL, Go', 'TypeScript, SQL, Go, Rust', '', 'German, English']) : ''
+  }));
+
+  const profileData = profile(pick(NAMES), {
+    headline: rng() > 0.2 ? pick(['Test engineer', '', 'Validation manager | HiL']) : '',
+    email: rng() > 0.15 ? 'user' + index + '@example.com' : '',
+    summary: rng() > 0.3 ? pick(['Short summary.', '', 'A longer summary with | a pipe and 中文.']) : ''
+  });
+
+  const state = sampleState(profileData, pick(REGIONS));
+  state.experience = roles;
+  state.skills = skills;
+  state.certifications =
+    rng() > 0.5
+      ? [
+          {
+            id: 'c' + index,
+            name: 'Old cert',
+            issuer: rng() > 0.5 ? 'Issuer' : '',
+            date: 'Jan 2015',
+            expires: 'Jan 2016',
+            link: ''
+          }
+        ]
+      : [];
+  state.education =
+    rng() > 0.4
+      ? [
+          {
+            id: 'f' + index,
+            school: 'TU Ilmenau',
+            degree: 'MSc',
+            field: 'Automotive',
+            location: 'Ilmenau',
+            start: '2018',
+            end: '2022',
+            details: ''
+          }
+        ]
+      : [];
+  return state;
+}
+
+/** The screening report must never throw or leave the 0–100 range. */
+function checkInvariants(state: ResumeState): string[] {
+  const problems: string[] = [];
+  let report;
+  try {
+    report = evaluateResume(state);
+  } catch (error) {
+    const message = error && (error as Error).message ? (error as Error).message : String(error);
+    return ['evaluateResume threw: ' + message];
+  }
+
+  if (!Number.isFinite(report.score) || report.score < 0 || report.score > 100) {
+    problems.push('headline out of range: ' + report.score);
+  }
+  if (!Array.isArray(report.checks) || report.checks.length < 11) {
+    problems.push('checks missing: ' + (report.checks ? report.checks.length : 'none'));
+  }
+
+  const region = report.checks.find((check) => check.id === 'region');
+  if (!region) problems.push('no regional fit check');
+  else if (!Number.isFinite(region.score) || region.score < 0 || region.score > 100) {
+    problems.push('regional fit out of range: ' + region.score);
+  }
+
+  report.checks.forEach((check) => {
+    if (!check.id) problems.push('check without an id');
+    if (!check.name) problems.push('check without a name: ' + check.id);
+    if (!Array.isArray(check.findings)) problems.push('check without findings: ' + check.id);
+    if (!Number.isFinite(check.score) || check.score < 0 || check.score > 100) {
+      problems.push('check out of range: ' + check.id + ' = ' + check.score);
+    }
+  });
+
+  return problems;
+}
+
+export interface RoundTripResult {
+  label: string;
+  ok: boolean;
+  problems: string[];
+}
+
+export interface TestReport {
+  ok: boolean;
+  passed: number;
+  total: number;
+  results: RoundTripResult[];
+  failures: RoundTripResult[];
+  variants: number;
+  invariantsPassed: number;
+  invariantsTotal: number;
+  invariantFailures: RoundTripResult[];
+}
+
+export async function runRoundTrip(): Promise<TestReport> {
+  const results: RoundTripResult[] = [];
+  const invariantFailures: RoundTripResult[] = [];
+  let variants = 0;
+  let invariantsPassed = 0;
+  let invariantsTotal = 0;
+
+  const record = (label: string, problems: string[]) => {
+    const entry = { label, ok: problems.length === 0, problems: problems.slice(0, 6) };
+    results.push(entry);
+    return entry;
+  };
+
+  const recordInvariants = (label: string, state: ResumeState) => {
+    invariantsTotal += 1;
+    const problems = checkInvariants(state);
+    if (problems.length) invariantFailures.push({ label, ok: false, problems: problems.slice(0, 6) });
+    else invariantsPassed += 1;
+  };
+
+  /* --- 1: every region, with that market's profile fields --- */
+  const bases = [profile('Ada Lovelace'), profile('Åse Möller'), profile('李小龙')];
+
+  for (let batch = 0; batch < REGIONS.length; batch += 1) {
+    const region = REGIONS[batch];
+    const base = bases[batch % bases.length];
+    const state = sampleState(regionProfile(base, region, batch === 0), region);
+    variants += 1;
+    recordInvariants('invariants · ' + region.toUpperCase(), state);
+
+    // The binary writers are slow, so they run for one region only.
+    for await (const item of buildAll(state, batch === 0)) {
       const bytes = new Uint8Array(await item.blob.arrayBuffer());
       try {
         const imported = await parseImportBytes(item.file, bytes);
-        const got = flatten(imported.state);
-        const problems = diff(expected, got);
-        results.push({
-          label: profile.name + ' · ' + item.name,
-          ok: problems.length === 0,
-          problems: problems.slice(0, 6)
-        });
-        if (problems.length) failures.push(results[results.length - 1]);
+        record(region.toUpperCase() + ' · ' + item.name, diff(flatten(state), flatten(imported.state)));
       } catch (error) {
-        const message = error && error.message ? error.message : String(error);
-        results.push({ label: profile.name + ' · ' + item.name, ok: false, problems: [message] });
-        failures.push(results[results.length - 1]);
+        const message = error && (error as Error).message ? (error as Error).message : String(error);
+        record(region.toUpperCase() + ' · ' + item.name, [message]);
       }
     }
   }
 
-  const passed = results.filter((item) => item.ok).length;
-  return { ok: failures.length === 0, passed, total: results.length, results, failures };
+  /* --- 2: random variants, deterministic seed --- */
+  const rng = mulberry32(20261121);
+  for (let index = 0; index < 8; index += 1) {
+    const state = randomState(rng, index);
+    variants += 1;
+    const label = 'random #' + (index + 1) + ' · ' + state.settings.region.toUpperCase();
+    recordInvariants('invariants · ' + label, state);
+
+    const writers = [
+      { name: 'JSON', text: toJson(state), file: 'random.json' },
+      { name: 'Markdown', text: toMarkdown(state), file: 'random.md' },
+      { name: 'TXT', text: toPlainText(state), file: 'random.txt' }
+    ];
+
+    for (const writer of writers) {
+      try {
+        const bytes = new TextEncoder().encode(writer.text);
+        const imported = await parseImportBytes(writer.file, bytes);
+        record(label + ' · ' + writer.name, diff(flatten(state), flatten(imported.state)));
+      } catch (error) {
+        const message = error && (error as Error).message ? (error as Error).message : String(error);
+        record(label + ' · ' + writer.name, [message]);
+      }
+    }
+  }
+
+  const failures = results.filter((item) => !item.ok);
+  const passed = results.length - failures.length;
+
+  return {
+    ok: failures.length === 0 && invariantFailures.length === 0,
+    passed,
+    total: results.length,
+    results,
+    failures,
+    variants,
+    invariantsPassed,
+    invariantsTotal,
+    invariantFailures
+  };
 }
 
-export function formatReport(report) {
-  const lines = report.results.map((item) => (item.ok ? '✓ ' : '✗ ') + item.label + (item.ok ? '' : ' — ' + item.problems.join(' · ')));
+export function formatReport(report: TestReport): string {
+  const lines = report.results.map(
+    (item) => (item.ok ? '✓ ' : '✗ ') + item.label + (item.ok ? '' : ' — ' + item.problems.join(' · '))
+  );
+
+  const invariantLines = report.invariantFailures.map((item) => '✗ ' + item.label + ' — ' + item.problems.join(' · '));
+
   return [
-    `${report.ok ? 'ALL PASS' : 'FAILURES'} — ${report.passed}/${report.total} formats × profiles rebuilt exactly`,
+    `${report.ok ? 'ALL PASS' : 'FAILURES'} — ${report.passed}/${report.total} round trips exact across ${report.variants} variants`,
+    `invariants — ${report.invariantsPassed}/${report.invariantsTotal} screening reports sane`,
     '',
-    ...lines
+    ...lines,
+    ...(invariantLines.length ? ['', 'invariant failures', ...invariantLines] : [])
   ].join('\n');
 }
 

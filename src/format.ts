@@ -1,4 +1,5 @@
 import { DATA_MARKER, encodeSnapshot, snapshot, wrapPayload } from './data';
+import { logisticsLine } from './fields';
 import type { ResumeState } from './types';
 import { dateRange, slugify, splitLines, splitList } from './util';
 
@@ -33,6 +34,8 @@ export function toMarkdown(state: ResumeState): string {
   if (p.headline) out.push(`**${p.headline}**`, '');
   const contact = [p.email, p.phone, p.location, p.website, p.linkedin].filter(Boolean);
   if (contact.length) out.push(contact.join(' · '), '');
+  const mdLogistics = logisticsLine(state);
+  if (mdLogistics) out.push(mdLogistics, '');
   if (s.showSummary && p.summary.trim()) out.push(p.summary.trim(), '');
 
   const roles = state.experience.filter((item) => item.role || item.company);
@@ -125,6 +128,8 @@ export function toPlainText(state: ResumeState): string {
   if (p.headline) out.push(p.headline, '');
   const contact = [p.email, p.phone, p.location, p.website, p.linkedin].filter(Boolean);
   if (contact.length) out.push(contact.join(' | '), '');
+  const txtLogistics = logisticsLine(state);
+  if (txtLogistics) out.push(txtLogistics, '');
   if (s.showSummary && p.summary.trim()) out.push('SUMMARY', '', p.summary.trim(), '');
 
   const roles = state.experience.filter((item) => item.role || item.company);

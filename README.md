@@ -9,11 +9,18 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 
 ## What it does
 
-- **Section rail** — on desktop the tabs sit in a slim column on the left, with the editor beside
-  it and the live resume on the right; on phones the same tabs run across the top. The sections are
-  Profile, Experience, Education (with Certifications inside), Projects, Skills and Settings.
-- **Docked bottom toolbar** — Save, import, export and settings from anywhere, plus the build number.
-- **Profile** — name, headline, contact details and a short summary.
+- **One dock** — there is no top header. The section tabs, the brand, the saved status, the build
+  number and the three quick actions (Save, Import, Export) share a single bar fixed at the bottom:
+  one row on a desktop, two rows on a phone. The sections are Profile, Experience, Education (with
+  Certifications inside), Projects, Skills, Screening and Settings.
+- **Profile** — name, headline, contact details and a short summary, plus the fields the selected
+  market expects: a photo, nationality, visa or residency status, availability, date of birth and
+  marital status appear only where that market wants them (required in the GCC, right-to-work in ANZ,
+  optional in EMEA/APAC/LATAM, hidden for the US).
+- **Guided mode** — an optional panel at the top of the builder that walks through the resume in the order
+  the checks read it, with a progress bar, done/not-done per step and Back / Open section / Next.
+- **App tour** — ten stops highlighting the dock, builder, preview, region button, issues toggle, Save,
+  Import, Export, Screening and Settings. Runs once on a first visit, replayable from Settings → Guidance.
 - **Experience** — roles with dates, a "still work here" toggle, one-line-per-bullet
   highlights and tags.
 - **Education**, **Certifications**, **Projects**, **Skills** — repeatable, reorderable entries.
@@ -21,8 +28,8 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   as a four-column table under Education.
 - **Live preview** — updates on every keystroke and every settings change.
 - **Export** — inside Settings, one panel where any combination of PDF, DOCX, PNG, TXT, Markdown
-  and JSON can be ticked; Download produces the file (or a ZIP for several) and the finished file
-  opens in a sheet. PNG export draws one image per A4 page.
+  and JSON can be ticked; Download produces the file (or a ZIP for several) and hands it to the
+  system share sheet on a phone. PNG export draws one image per A4 page.
 - **Settings** — dark/light theme, resume typeface, density, section visibility, storage usage,
   a data reset, the export panel, the saved-version history, and the release notes and changelog.
 - **History** — a Save button (or Cmd/Ctrl+S) snapshots the whole resume into the browser:
@@ -32,7 +39,51 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   gaps, STAR readiness, skills, verifiable certifications, working portfolio links, a
   blind-screening view, and length. The LLM section builds a ready-to-send prompt to paste into
   any chat model next to the exported .md file. Tapping a finding scrolls the live preview to
-  the exact role, entry or line it concerns and flashes it.
+  the exact role, entry or line it concerns and keeps it highlighted until the tab is left.
+- **Hiring regions** — a region button in the preview header (EMEA, US, GCC, APAC, LATAM, ANZ) sets the
+  rules the resume is judged by: the page ceiling, whether nationality, visa status or a photo belong on
+  the page, the language levels that market notices, and how references are handled. The Regional fit
+  check is scored against that market, and the AI prompt is rewritten with the market's checklist. The
+  same choice is also in Screening.
+- **A headline weighted by market** — the score at the top of Screening is one number, a weighted
+  average: each check counts by a multiplier set for the selected region, the market's own rules carry
+  the largest share (×4), and the rest are tuned to what that market screens hardest. The guide lists
+  every multiplier, so the headline can be recomputed by hand.
+- **Folding checks** — every check card collapses to its score, name and verdict; anything with a
+  warning or a failure opens itself, and Expand all / Collapse all sit above the list.
+- **Published standards** — every check names the source behind it ("Based on: …"), from Jobscan's 75% match
+  target and Coversentry's 2026 ATS statistics to the Ladders eye-tracking study, Sackett et al. 2022 on
+  structured-interview validity, NACE on skills-based hiring, the ResumeGo length study, and NYC Local Law 144
+  with the EU AI Act. The scoring guide lists all ten with what each says, an evidence label — peer-reviewed,
+  government guidance, industry study, vendor guidance, vendor data or regulation — and the rule it set. It also
+  states what the research does not support: the "75% of resumes are rejected by an ATS" claim has no published
+  method and is not used anywhere in the app.
+- **Region scoring guide** — "How each region is scored", opened from Screening and from Settings, is one
+  window with a collapsible section per market: the live score for this resume, an introduction to what
+  that market reads for, then each scoring criterion as a subtitle with what it expects, how the app
+  measures it, what passes and the points it carries, followed by the expectations the other checks
+  already cover and the recruiter's checklist for that market.
+- **Expired certificates warn, they do not score** — published guidance (Rezi, ResumeMate,
+  Resumly, the Jobscan date rules) treats a lapsed certificate as an accuracy problem with three
+  fixes: renew it, remove it, or label it expired or renewal in progress. The Certifications
+  check therefore warns without removing points, and the regulations toggle marks it amber, not
+  red.
+- **Regulations check** — a toggle in the preview header marks every field that breaks a resume
+  convention: missing name, contact line or summary, a missing or reversed date, a bullet over 40
+  words, an expired certificate, a malformed link, a duplicated skill. Missing header fields show
+  as dashed placeholders, and tapping a marked line opens that field in the editor.
+- **Load a resume from JSON** — Settings → Data takes a pasted resume JSON and replaces every field
+  at once, with the replaced version kept in History. Handy on a phone, where a file would otherwise
+  have to go through the share sheet first.
+- **Full backup with photo** — one .json with every field, every setting and the profile portrait at full
+  quality: the small display copy for the paper, plus the upload kept whole. Import it on another device
+  and the resume returns as it was, picture included. Markdown and TXT exports carry the same snapshot.
+- **Context-aware checks** — free text is read for what it states, not for words that appear in it:
+  "open to relocation" is not a nationality, "citizen developer" is not a passport, "single-page
+  application" is not a marital status. Findings quote the phrase that triggered them, and the structured
+  region fields always take priority over anything read from the summary.
+- **Timeline and study years** — a gap between roles that falls inside a degree, a language course
+  or a preparation year counts as covered time, and a bare year as an end date reads as December.
 
 ## Exports and round trips
 
@@ -50,8 +101,9 @@ Settings → **Resume colour** switches the preview and the PDF, PNG and DOCX ex
 strict black on white.
 
 Files are named `Name_dd.mmm.yyyy-hh.mm.ext` at the moment of export, with `-1`, `-2` suffixes when
-PNG runs to several pages. Download produces the file and opens it in a sheet, where **Open** shows
-it in the browser and the browser's own share button can send it on.
+PNG runs to several pages. On iPhone and iPad Download opens the system share sheet — Files, Mail,
+Messages, WhatsApp, contacts and the rest — with the finished file attached. Where sharing is not
+available, a sheet offers **Save to Files**, **Copy text** and a Share button that retries.
 
 JSON carries the state as-is. Markdown and TXT carry the same snapshot base64-encoded in a
 comment (HTML comment in Markdown, a marked block at the end of the TXT). Importing any of
@@ -96,8 +148,10 @@ overridable with the `BUILD_NUMBER` environment variable).
 ## Files
 
 - `index.html` — a one-line forwarder to the built app in `dist/`.
-- `src/index.html` — page shell: backdrop, header with the section rail, editor, preview, dock.
+- `src/index.html` — page shell: backdrop, editor, preview header with the regulations toggle, and
+  the single dock holding the section tabs and the quick actions.
 - `src/app.js` — state, persistence, editor and preview rendering, export/import wiring.
+- `src/compliance.ts` — the resume regulations the toggle checks, field by field.
 - `src/format.ts` — Markdown and TXT builders with the embedded data block.
 - `src/parse.ts` — import detection and the best-effort text parsers.
 - `src/pdf.ts` / `src/docx.ts` / `src/zip.ts` / `src/png.ts` — the file writers (PNG draws one
@@ -107,5 +161,5 @@ overridable with the `BUILD_NUMBER` environment variable).
   interview, skills, certifications, links, blind view, length) and the LLM prompt builder.
 - `src/styles.css` — theme, layout, editor, resume paper and print styles.
 
-Printing still works through the browser's own dialog (`Print` in the preview toolbar),
-but PDF no longer depends on it.
+The print stylesheet is still there, so printing the page from the browser's own menu prints the
+resume alone; the in-app Print button is gone, since PDF export covers it.

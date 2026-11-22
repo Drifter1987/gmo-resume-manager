@@ -95,8 +95,9 @@ interface FilePickerHandle {
 /**
  * Get a file out of the app.
  * Desktop browsers get a real save dialog (or a download link inside a hidden frame).
- * iOS cannot download blob files, so the caller shows an in-app sheet with a preview
- * and an explicit Open/Save link — predictable, and never replaces the page by itself.
+ * iOS cannot download blob files from a page, so the caller shows the system share
+ * sheet first and falls back to this: the file in an in-app sheet with a Save to
+ * Files link, a copy action and a Share button that can retry.
  */
 export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult> {
   const dot = filename.lastIndexOf('.');

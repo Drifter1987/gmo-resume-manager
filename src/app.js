@@ -9,11 +9,21 @@ import { buildPdf } from './pdf';
 import { toJson, toMarkdown, toPlainText } from './format';
 import { parseImportBytes } from './parse';
 import { APP_VERSION, BUILD_NUMBER } from './version';
-import { saveBlob } from './util';
+import { saveBlob, shareFiles } from './util';
 import { buildPngPages } from './png';
 import { createZip } from './zip';
 import { runRoundTrip, formatReport } from './selftest';
-import { evaluateResume, buildLlmPrompt } from './screening';
+import {
+  evaluateResume,
+  buildLlmPrompt,
+  REGION_GUIDES,
+  REGION_SCORE_WEIGHTS,
+  CHECK_LABELS,
+  METHOD_SOURCES,
+  STANDARDS_CAVEAT
+} from './screening';
+import { complianceIssues } from './compliance';
+import { regionFields, missingRequiredFields, logisticsLine, visiblePhoto } from './fields';
 
 const STORAGE_KEY = 'gmoResumeManager.v2';
 const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
@@ -143,6 +153,10 @@ const COLLECTIONS = {
 
 const COLLECTION_KEYS = Object.keys(COLLECTIONS);
 
+/* Hiring regions the screening checks know about. */
+const REGION_IDS = ['emea', 'us', 'gcc', 'apac', 'latam', 'anz'];
+const REGION_LABELS = { emea: 'EMEA', us: 'US', gcc: 'GCC', apac: 'APAC', latam: 'LATAM', anz: 'ANZ' };
+
 function defaultSettings() {
   return {
     theme: 'dark',
@@ -153,6 +167,7 @@ function defaultSettings() {
     showTags: true,
     target: '',
     keywords: '',
+    region: 'emea',
     sections: { experience: true, education: true, certifications: true, projects: true, skills: true }
   };
 }
@@ -167,7 +182,14 @@ function emptyState() {
       location: '',
       website: '',
       linkedin: '',
-      summary: ''
+      summary: '',
+      photo: '',
+      photoFull: '',
+      nationality: '',
+      workAuth: '',
+      availability: '',
+      dateOfBirth: '',
+      maritalStatus: ''
     },
     experience: [],
     education: [],
@@ -189,7 +211,14 @@ function exampleState() {
       website: 'ada.dev',
       linkedin: 'linkedin.com/in/adalovelace',
       summary:
-        'Engineer with eight years building reliable backends and the tooling around them. I like small teams, clear interfaces, and leaving systems easier to change than I found them.'
+        'Engineer with eight years building reliable backends and the tooling around them. I like small teams, clear interfaces, and leaving systems easier to change than I found them.',
+      photo: '',
+      photoFull: '',
+      nationality: '',
+      workAuth: '',
+      availability: '',
+      dateOfBirth: '',
+      maritalStatus: ''
     },
     experience: [
       {
@@ -265,7 +294,16 @@ function exampleState() {
 /* -------------------------------------------------------------------- */
 
 let state = emptyState();
-let ui = { section: 'profile', scrolls: {}, pageY: 0, sub: { education: 'education', settings: 'settings' } };
+let ui = {
+  section: 'profile',
+  scrolls: {},
+  pageY: 0,
+  regulations: false,
+  guided: false,
+  guidedStep: 0,
+  tourSeen: false,
+  sub: { education: 'education', settings: 'settings' }
+};
 let history = [];
 let saveTimer = null;
 let hintTimer = null;
@@ -451,6 +489,7 @@ function normalizeSettings(raw) {
   if (typeof raw.showTags === 'boolean') out.showTags = raw.showTags;
   if (typeof raw.target === 'string') out.target = raw.target;
   if (typeof raw.keywords === 'string') out.keywords = raw.keywords;
+  if (typeof raw.region === 'string' && REGION_IDS.indexOf(raw.region) !== -1) out.region = raw.region;
 
   if (raw.sections && typeof raw.sections === 'object') {
     ['experience', 'education', 'certifications', 'projects', 'skills'].forEach((key) => {
@@ -486,6 +525,10 @@ function loadUi() {
     if (typeof parsed.section === 'string') ui.section = parsed.section;
     if (parsed.scrolls && typeof parsed.scrolls === 'object') ui.scrolls = parsed.scrolls;
     if (typeof parsed.pageY === 'number') ui.pageY = parsed.pageY;
+    if (parsed.regulations === true) ui.regulations = true;
+    if (parsed.guided === true) ui.guided = true;
+    if (typeof parsed.guidedStep === 'number' && parsed.guidedStep >= 0) ui.guidedStep = parsed.guidedStep;
+    if (parsed.tourSeen === true) ui.tourSeen = true;
     if (parsed.sub && typeof parsed.sub === 'object') {
       if (parsed.sub.education === 'certifications' || parsed.sub.education === 'education') {
         ui.sub.education = parsed.sub.education;
@@ -561,9 +604,20 @@ function saveSnapshot() {
   if (!persistHistory()) return;
 
   toast('Saved to history');
-  showHint('Snapshot saved');
   if (ui.section === 'history') renderEditor();
   else if (ui.section === 'settings') renderEditor();
+}
+
+/** Keeps the current resume in History before something replaces it. */
+function snapshotQuietly() {
+  if (!hasAnyData()) return;
+  history.unshift({
+    id: uid(),
+    savedAt: new Date().toISOString(),
+    state: JSON.parse(JSON.stringify(state))
+  });
+  if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT;
+  persistHistory();
 }
 
 function restoreSnapshot(id) {
@@ -598,10 +652,8 @@ async function downloadSnapshot(id) {
   const stamp = String(entry.savedAt || '').slice(0, 10);
   const name = slugify(profile.name || 'resume') + '-resume-' + stamp + '.json';
   try {
-    const blob = new Blob([toJson(entry.state)], { type: 'application/json' });
-    const result = await saveBlob(blob, name);
-    if (result === 'downloaded') toast('Snapshot saved');
-    else if (result === 'opened') showExportSheet(blob, name, 'json');
+    const file = new File([toJson(entry.state)], name, { type: 'application/json' });
+    await deliverFile(file, 'json');
   } catch (error) {
     console.error(error);
     toast('Could not write that snapshot', true);
@@ -642,9 +694,12 @@ function field(label, path, value, placeholder, options) {
 
 function toolButtons(collection, id, index, total) {
   return `
-    <button class="icon-btn" type="button" data-action="move-up" data-col="${collection}" data-id="${id}" title="Move up" ${index === 0 ? 'disabled' : ''}>↑</button>
-    <button class="icon-btn" type="button" data-action="move-down" data-col="${collection}" data-id="${id}" title="Move down" ${index === total - 1 ? 'disabled' : ''}>↓</button>
-    <button class="icon-btn danger" type="button" data-action="remove" data-col="${collection}" data-id="${id}" title="Delete">✕</button>
+    <button class="icon-btn" type="button" data-action="move-up" data-col="${collection}" data-id="${id}"
+      title="Move up" aria-label="Move up" ${index === 0 ? 'disabled' : ''}>↑</button>
+    <button class="icon-btn" type="button" data-action="move-down" data-col="${collection}" data-id="${id}"
+      title="Move down" aria-label="Move down" ${index === total - 1 ? 'disabled' : ''}>↓</button>
+    <button class="icon-btn danger" type="button" data-action="remove" data-col="${collection}" data-id="${id}"
+      title="Delete" aria-label="Delete" >✕</button>
   `;
 }
 
@@ -675,12 +730,134 @@ function editorShell(title, subtitle, body, collection) {
   `;
 }
 
+/* -------------------------------------------------------------------- */
+/* region details: only the fields the selected market expects          */
+/* -------------------------------------------------------------------- */
+
+function requiredTag(spec) {
+  return spec.required ? ' <span class="req-tag">required</span>' : ' <span class="opt-tag">optional</span>';
+}
+
+function regionPhotoControl(spec) {
+  const photo = state.profile.photo;
+  return `<div class="field span-2 region-photo">
+    <span class="field-label">${esc(spec.label)}${requiredTag(spec)}</span>
+    <div class="photo-row">
+      <span class="photo-thumb">${
+        photo ? `<img src="${esc(photo)}" alt="Profile photo preview" />` : '<span class="photo-empty">No photo</span>'
+      }</span>
+      <label class="btn btn-sm file-trigger">
+        ${photo ? 'Replace photo' : 'Upload photo'}
+        <input type="file" class="file-input" accept="image/*" data-photo-input />
+      </label>
+      ${photo ? '<button class="btn btn-sm btn-ghost" type="button" data-action="remove-photo">Remove</button>' : ''}
+    </div>
+    <span class="field-hint">${esc(spec.hint)}</span>
+  </div>`;
+}
+
+function regionTextField(spec) {
+  const value = state.profile[spec.key] || '';
+  return `<label class="field${spec.required ? ' is-required' : ''}">
+    <span class="field-label">${esc(spec.label)}${requiredTag(spec)}</span>
+    <input type="text" data-path="profile.${spec.key}" value="${esc(value)}" placeholder="${esc(spec.placeholder)}" />
+    <span class="field-hint">${esc(spec.hint)}</span>
+  </label>`;
+}
+
+function regionFieldsBlock() {
+  const region = currentRegion();
+  const specs = regionFields(region);
+  const label = REGION_LABELS[region];
+
+  if (!specs.length) {
+    return `<div class="region-fields-empty span-2">
+      <strong>${esc(label)} CVs carry no photo or personal details.</strong>
+      <p>This market filters nationality, date of birth, marital status and photographs out, sometimes before a person
+      reads the file, so the builder hides those fields while ${esc(label)} is selected. Switch region above to see the
+      fields another market expects.</p>
+    </div>`;
+  }
+
+  const required = specs.filter((spec) => spec.required).length;
+  return `<div class="region-fields span-2">
+    <div class="region-fields-head">
+      <strong>${esc(label)} details</strong>
+      <span>${specs.length} field${specs.length === 1 ? '' : 's'} this market expects${
+    required ? ', ' + required + ' required' : ', all optional'
+  }</span>
+    </div>
+    <div class="form-grid">
+      ${specs.map((spec) => (spec.kind === 'photo' ? regionPhotoControl(spec) : regionTextField(spec))).join('')}
+    </div>
+  </div>`;
+}
+
+/** Reads the upload twice: a small display copy, and the picture kept whole for backups. */
+const PHOTO_DISPLAY_MAX = 320;
+const PHOTO_FULL_MAX = 1600;
+const PHOTO_FULL_LIMIT = 900000; /* characters of data URL before the archive copy is re-encoded */
+
+function renderPhoto(img, max, quality) {
+  const scale = Math.min(1, max / Math.max(img.width || max, img.height || max));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round((img.width || max) * scale));
+  canvas.height = Math.max(1, Math.round((img.height || max) * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas unavailable');
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+function readPhotoFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.onload = () => {
+      const original = String(reader.result || '');
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode failed'));
+      img.onload = () => {
+        try {
+          const display = renderPhoto(img, PHOTO_DISPLAY_MAX, 0.82);
+          /* The archive keeps the upload untouched when it fits comfortably; a very large
+             phone photo is re-encoded at 1600px rather than blowing the storage budget. */
+          const full = original.length <= PHOTO_FULL_LIMIT ? original : renderPhoto(img, PHOTO_FULL_MAX, 0.92);
+          resolve({ display, full });
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.src = original;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handlePhotoInput(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  try {
+    const photo = await readPhotoFile(file);
+    state.profile.photo = photo.display;
+    state.profile.photoFull = photo.full;
+    save();
+    renderEditor();
+    renderPreview();
+    toast(photo.full === photo.display ? 'Photo added' : 'Photo added — full quality kept for backups');
+  } catch (error) {
+    toast('That image could not be read', true);
+  }
+  input.value = '';
+}
+
 function profileEditor() {
   const p = state.profile;
   return `
     <div class="panel-head">
       <h2>Profile</h2>
-      <p class="panel-sub">The header of your resume. Everything here saves as you type.</p>
+      <p class="panel-sub">The header of your resume. Everything here saves as you type, and the fields follow the
+      market you selected.</p>
     </div>
     <div class="form-grid">
       ${field('Full name', 'profile.name', p.name, 'Ada Lovelace', { span: 'span-2', autocomplete: 'name' })}
@@ -691,6 +868,7 @@ function profileEditor() {
       ${field('Website', 'profile.website', p.website, 'ada.dev')}
       ${field('LinkedIn', 'profile.linkedin', p.linkedin, 'linkedin.com/in/ada', { span: 'span-2' })}
       ${field('Summary', 'profile.summary', p.summary, 'Two or three lines on what you do and what you are looking for.', { rows: 5, span: 'span-2' })}
+      ${regionFieldsBlock()}
     </div>
   `;
 }
@@ -858,7 +1036,7 @@ function historyEditor() {
         ? history.length + (history.length === 1 ? ' version saved.' : ' versions saved.')
         : 'Nothing saved yet.'}</p>
     </div>
-    <p class="fineprint">Save in the bottom bar snapshots the current resume at any time.</p>
+    <p class="fineprint">Save in the dock snapshots the current resume at any time.</p>
     ${
       history.length
         ? `<div class="history-list">${history.map(historyRow).join('')}</div>`
@@ -936,16 +1114,19 @@ function exportText(kind) {
 }
 
 /**
- * The app's own web view cannot save files. Show the finished file in a sheet with
- * a visible Open/Save link and a copy action, so the export is never a dead end.
+ * The last resort when the share sheet cannot be reached: the file plus a Share
+ * button (a fresh tap, which iOS accepts), a real "Save to Files" download link
+ * and, for text formats, a copy action. No bare blob URL is opened in a new tab.
  */
-function showExportSheet(blob, name, kind) {
+function showExportSheet(blob, name, kind, shareables) {
   const previous = document.getElementById('export-sheet');
   if (previous) previous.remove();
 
   const url = URL.createObjectURL(blob);
   const size = Math.max(1, Math.round(blob.size / 1024));
   const copyable = kind === 'md' || kind === 'txt' || kind === 'json';
+  const files = Array.isArray(shareables) ? shareables.filter(Boolean) : [];
+  const canShare = files.length > 0 && typeof navigator.share === 'function';
 
   const sheet = document.createElement('div');
   sheet.id = 'export-sheet';
@@ -957,7 +1138,7 @@ function showExportSheet(blob, name, kind) {
           <p class="sheet-title">${esc(kind.toUpperCase())} ready</p>
           <p class="sheet-file">${esc(name)} · ${size} KB</p>
         </div>
-        <button class="icon-btn" type="button" data-sheet-close title="Close">✕</button>
+        <button class="icon-btn" type="button" data-sheet-close title="Close" aria-label="Close">✕</button>
       </div>
       ${
         kind === 'pdf'
@@ -965,24 +1146,43 @@ function showExportSheet(blob, name, kind) {
           : `<div class="sheet-blank">${esc(kind.toUpperCase())} file · ${size} KB</div>`
       }
       <div class="sheet-actions">
-        <a class="btn btn-primary" href="${url}" target="_blank" rel="noopener">Open</a>
+        ${canShare ? '<button class="btn btn-primary" type="button" data-sheet-share>Share…</button>' : ''}
+        <a class="btn${canShare ? '' : ' btn-primary'}" href="${url}" download="${esc(name)}">Save to Files</a>
         ${copyable ? `<button class="btn" type="button" data-copy="${kind}">Copy text</button>` : ''}
-        <button class="btn" type="button" data-sheet-close>Close</button>
+        <button class="btn btn-ghost" type="button" data-sheet-close>Close</button>
       </div>
-      <p class="fineprint">Open shows the file in a new tab, where the browser's own share button can send it on.</p>
+      <p class="fineprint">Share opens the system share sheet, where Files, Mail, Messages and the rest can take
+      the file. Save to Files writes it into the Files app.</p>
     </div>
   `;
 
   document.body.appendChild(sheet);
 
-  sheet.addEventListener('click', (event) => {
+  const close = () => {
+    sheet.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  sheet.addEventListener('click', async (event) => {
     if (event.target === sheet || event.target.closest('[data-sheet-close]')) {
-      sheet.remove();
-      URL.revokeObjectURL(url);
+      close();
       return;
     }
     const copy = event.target.closest('[data-copy]');
-    if (copy) copyText(copy.dataset.copy);
+    if (copy) {
+      copyText(copy.dataset.copy);
+      return;
+    }
+    const share = event.target.closest('[data-sheet-share]');
+    if (share) {
+      const outcome = await shareFiles(files, name);
+      if (outcome === 'shared') {
+        toast('Shared');
+        close();
+      } else if (outcome === 'unsupported') {
+        toast('Sharing is not available here — use Save to Files', true);
+      }
+    }
   });
 }
 
@@ -1029,12 +1229,19 @@ function exportEditor() {
       <button class="btn btn-primary" type="button" data-action="export-download">Download</button>
       <button class="btn" type="button" data-action="export-copy">Copy text</button>
     </div>
-    <p class="fineprint">Two or more files are bundled into a single ZIP. Download opens the finished file,
-    ready to share from there. Use Import in the bottom bar (or drop a file here) to bring a resume back in.</p>
+    <div class="export-bar">
+      <button class="btn" type="button" data-action="full-backup">Full backup with photo</button>
+    </div>
+    <p class="fineprint">Full backup writes one .json with everything — every field, every setting and the
+    profile photo at full quality — so another device can restore the resume exactly. Ticking only JSON above
+    exports the same data without that label.</p>
+    <p class="fineprint">Two or more files are bundled into a single ZIP. On a phone Download opens the system
+    share sheet — Files, Mail, Messages, WhatsApp and the rest. Use Import in the dock (or drop a file here)
+    to bring a resume back in.</p>
 
     <div class="panel-head panel-head-tight">
       <h2>Import</h2>
-      <p class="panel-sub">Use Import in the bottom bar to choose a file, or drop one here. Every format
+      <p class="panel-sub">Use Import in the dock to choose a file, or drop one here. Every format
       this app exports restores the same resume: content, order, colour mode and settings.</p>
     </div>
     <div class="drop-zone" id="drop-zone">
@@ -1113,6 +1320,21 @@ function settingsEditor() {
     </section>
 
     <section class="setting-block">
+      <h3 class="setting-title">Guidance</h3>
+      <div class="switch-row">
+        <span>Guided mode<small>A step-by-step panel at the top of the builder that follows you through the resume,
+        in the order the checks read it.</small></span>
+        <button class="btn btn-sm" type="button" data-action="guided-toggle">${
+          ui.guided ? 'Stop guided mode' : 'Start guided mode'
+        }</button>
+      </div>
+      <div class="switch-row">
+        <span>App tour<small>Highlights each part of the interface and explains what it does.</small></span>
+        <button class="btn btn-sm" type="button" data-action="tour-start">Replay the tour</button>
+      </div>
+    </section>
+
+    <section class="setting-block">
       <h3 class="setting-title">Sections</h3>
       <div class="switch-row">
         <span>Experience</span>
@@ -1138,6 +1360,16 @@ function settingsEditor() {
     </section>
 
     <section class="setting-block">
+      <h3 class="setting-title">Hiring regions</h3>
+      <p class="setting-note">The Screening tab scores the resume against one market at a time. The guide opens
+      the same window as the button in Screening: every region, every criterion it screens for, and the points
+      each one carries.</p>
+      <button class="btn btn-sm guide-open-btn" type="button" data-action="region-guide">
+        How each region is scored
+      </button>
+    </section>
+
+    <section class="setting-block">
       <h3 class="setting-title">Data</h3>
       <div class="data-row">
         <span>Storage used</span>
@@ -1156,9 +1388,26 @@ function settingsEditor() {
         <span class="mono">${esc(BUILD_NUMBER)}</span>
       </div>
       <div class="verify-row">
+        <button class="btn btn-primary" type="button" data-action="full-backup">Full backup with photo</button>
+        <span class="setting-note">One .json holding every field, every setting and the profile photo at full
+        quality. Import it on another device and the resume returns exactly as it is here, picture included.</span>
+      </div>
+      <div class="verify-row">
         <button class="btn" type="button" data-action="verify">Verify export / import</button>
-        <span class="setting-note">Builds every export, imports each one back and compares the resume
-        field by field. About a second. Nothing is downloaded or overwritten.</span>
+        <pre class="verify-report" id="verify-report" hidden></pre>
+        <span class="setting-note">Runs the whole test suite: every export built and imported back field by
+        field, once per market with that market's profile fields, plus eight seeded random resumes checked
+        for fidelity and for a sane screening report. A few seconds. Nothing is downloaded or overwritten.</span>
+      </div>
+      <div class="paste-row">
+        <label class="field-label" for="paste-json">Paste a resume JSON</label>
+        <textarea id="paste-json" class="textarea paste-area" rows="4" data-paste="json"
+          placeholder='{"data": { "profile": { "name": "…" } }}'></textarea>
+        <div class="verify-row">
+          <button class="btn" type="button" data-action="apply-paste">Load pasted JSON</button>
+          <span class="setting-note">Replaces every field at once, the same as importing a .json file.
+          The current resume is saved into History first, so it can be restored.</span>
+        </div>
       </div>
       <div class="danger-zone">
         <button class="btn btn-danger" type="button" data-action="reset">Clear all data</button>
@@ -1168,7 +1417,163 @@ function settingsEditor() {
   `;
 }
 
-/* --- screening: how the resume survives the methods recruiters use --- */
+/* -------------------------------------------------------------------- */
+/* resume regulations: mark every field that breaks a resume convention  */
+/* -------------------------------------------------------------------- */
+
+let activeAnchor = null;
+let previewIssues = [];
+
+function regulationsOn() {
+  return ui.regulations === true;
+}
+
+function currentIssues() {
+  if (!regulationsOn()) return [];
+  try {
+    return complianceIssues(state);
+  } catch (error) {
+    return [];
+  }
+}
+
+function anchorElement(anchor) {
+  const resume = document.getElementById('resume');
+  if (!resume || !anchor) return null;
+  return resume.querySelector('[data-r-anchor="' + String(anchor).replace(/"/g, '\\"') + '"]');
+}
+
+/** Re-applies the screening highlight and the regulation marks to the preview. */
+function applyPreviewMarks() {
+  const resume = document.getElementById('resume');
+  if (!resume) return;
+
+  resume.querySelectorAll('.is-target, .is-flagged').forEach((el) => {
+    el.classList.remove('is-target', 'is-flagged', 'is-flag-fail', 'is-flag-warn');
+    el.removeAttribute('title');
+  });
+
+  if (ui.section === 'screening' && activeAnchor) {
+    const target = anchorElement(activeAnchor);
+    if (target) {
+      target.classList.add('is-target');
+      target.setAttribute('title', 'The screening finding points here');
+    }
+  }
+
+  const issues = currentIssues();
+  previewIssues = issues;
+
+  issues.forEach((issue) => {
+    if (!issue.anchor) return;
+    const el = anchorElement(issue.anchor);
+    if (!el) return;
+    el.classList.add('is-flagged', issue.severity === 'fail' ? 'is-flag-fail' : 'is-flag-warn');
+    const existing = el.getAttribute('title');
+    el.setAttribute('title', existing ? existing + ' ' + issue.text : issue.text);
+  });
+
+  updateFlagTally(issues);
+}
+
+function updateFlagTally(issues) {
+  const tally = document.getElementById('flag-tally');
+  if (!tally) return;
+
+  if (!regulationsOn()) {
+    tally.textContent = '';
+    tally.classList.remove('is-bad');
+    return;
+  }
+
+  const serious = issues.filter((issue) => issue.severity === 'fail').length;
+  tally.textContent = issues.length
+    ? issues.length + (issues.length === 1 ? ' field needs attention' : ' fields need attention') +
+      (serious ? ' · ' + serious + ' serious' : '')
+    : 'Every field follows the usual resume rules';
+  tally.classList.toggle('is-bad', serious > 0);
+}
+
+/** Flags the matching form fields in the editor, with the reason beside the field. */
+function decorateEditor() {
+  const panel = document.getElementById('editor-panel');
+  if (!panel) return;
+
+  panel.querySelectorAll('.is-flagged').forEach((el) => {
+    el.classList.remove('is-flagged');
+    el.removeAttribute('title');
+  });
+  panel.querySelectorAll('.field-flag').forEach((el) => el.remove());
+  panel.querySelectorAll('[aria-invalid="true"]').forEach((el) => el.removeAttribute('aria-invalid'));
+
+  if (!regulationsOn()) return;
+
+  const byPath = new Map();
+  currentIssues().forEach((issue) => {
+    if (!issue.path) return;
+    const list = byPath.get(issue.path) || [];
+    list.push(issue.text);
+    byPath.set(issue.path, list);
+  });
+
+  byPath.forEach((messages, path) => {
+    const control = panel.querySelector('[data-path="' + path + '"]');
+    if (!control) return;
+    const box = control.closest('.field, .check, .switch-row') || control;
+    box.classList.add('is-flagged');
+    box.setAttribute('title', messages.join(' '));
+    control.setAttribute('aria-invalid', 'true');
+
+    if (box !== control && box.classList.contains('field')) {
+      const note = document.createElement('span');
+      note.className = 'field-flag';
+      note.textContent = messages[0];
+      box.appendChild(note);
+    }
+  });
+}
+
+function setRegulations(on) {
+  ui.regulations = Boolean(on);
+  saveUi();
+  decorateEditor();
+  applyPreviewMarks();
+}
+
+function sectionForPath(path) {
+  if (!path) return null;
+  if (path.indexOf('profile.') === 0) return 'profile';
+  if (path.indexOf('experience.') === 0) return 'experience';
+  if (path.indexOf('education.') === 0) return 'education';
+  if (path.indexOf('certifications.') === 0) return 'education';
+  if (path.indexOf('projects.') === 0) return 'projects';
+  if (path.indexOf('skills.') === 0) return 'skills';
+  if (path.indexOf('settings.') === 0) return 'settings';
+  return null;
+}
+
+/** Jumps from a flagged field in the preview to the same field in the editor. */
+function focusField(path) {
+  const section = sectionForPath(path);
+  if (!section) return;
+  if (!ui.sub) ui.sub = { education: 'education', settings: 'settings' };
+  if (path.indexOf('certifications.') === 0) ui.sub.education = 'certifications';
+
+  goTo(section);
+
+  requestAnimationFrame(() => {
+    const panel = document.getElementById('editor-panel');
+    const target = panel ? panel.querySelector('[data-path="' + path + '"]') : null;
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    const card = target.closest('.card') || target;
+    if (card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+/* -------------------------------------------------------------------- */
+/* screening: how the resume survives the methods recruiters use        */
+/* -------------------------------------------------------------------- */
 
 let screenTimer = null;
 
@@ -1177,7 +1582,8 @@ function screeningHub() {
     <div class="panel-head">
       <h2>Screening</h2>
       <p class="panel-sub">How this resume survives the methods recruiters actually use. Every check is
-      computed in the browser from what you have typed — nothing is sent anywhere.</p>
+      computed in the browser from what you have typed — nothing is sent anywhere. Tap a finding and the
+      preview scrolls to that line and keeps it lit until you leave Screening.</p>
     </div>
 
     <section class="setting-block">
@@ -1194,6 +1600,22 @@ function screeningHub() {
       LLM prompt. The checks re-run as you type.</p>
     </section>
 
+    <section class="setting-block">
+      <h3 class="setting-title">Hiring region</h3>
+      <div class="seg seg-wrap" role="group" aria-label="Hiring region">
+        ${REGION_IDS.map(
+          (id) =>
+            `<button class="seg-btn${state.settings.region === id ? ' is-on' : ''}" type="button"
+              data-set="region" data-value="${id}">${esc(REGION_LABELS[id])}</button>`
+        ).join('')}
+      </div>
+      <p class="setting-note">Page norms, personal details, language levels and references follow this market:
+      it sets the page ceiling and scores the Regional fit card. The AI prompt below is written for it too.</p>
+      <button class="btn btn-sm guide-open-btn" type="button" data-action="region-guide">
+        How each region is scored
+      </button>
+    </section>
+
     <div id="screen-results">${screenResultsHtml()}</div>
   `;
 }
@@ -1207,7 +1629,11 @@ function screenResultsHtml() {
   return `
     <div class="screen-overall">
       <span class="screen-total">${report.score}</span>
-      <span>/ 100 — the average across the scored checks</span>
+      <span>/ 100 — the weighted average for this market</span>
+    </div>
+    <div class="screen-controls">
+      <button class="btn btn-sm" type="button" data-action="screen-expand">Expand all</button>
+      <button class="btn btn-sm" type="button" data-action="screen-collapse">Collapse all</button>
     </div>
     ${rest.map((check) => screenCard(check, report)).join('')}
     ${llm ? llmCard(llm, prompt) : ''}
@@ -1216,37 +1642,52 @@ function screenResultsHtml() {
 
 function screenCard(check, report) {
   const cls = check.status === 'pass' ? 'ok' : check.status === 'warn' ? 'warn' : check.status === 'fail' ? 'bad' : 'info';
-  return `<article class="screen-card is-${cls}">
-    <div class="screen-head">
+  // A check that needs attention opens itself; a clean one folds down to its headline,
+  // so a long list stays navigable on a phone.
+  const needsAttention = check.status === 'warn' || check.status === 'fail';
+  const open = needsAttention || check.findings.some((finding) => finding.status === 'warn' || finding.status === 'fail');
+
+  return `<details class="screen-card is-${cls}"${open ? ' open' : ''}>
+    <summary class="screen-head">
       <span class="screen-score">${check.status === 'info' ? '—' : check.score}</span>
       <span class="screen-name">${esc(check.name)}</span>
       <span class="screen-status">${esc(check.status)}</span>
+    </summary>
+    <div class="screen-body">
+      <p class="screen-summary">${esc(check.summary)}</p>
+      ${check.standard ? `<p class="screen-standard">Based on: ${esc(check.standard)}</p>` : ''}
+      ${
+        check.findings.length
+          ? `<ul class="screen-findings">${check.findings
+              .map((finding) =>
+                finding.target
+                  ? `<li class="is-${finding.status}"><button class="screen-jump" type="button" data-jump="${esc(
+                      finding.target
+                    )}" title="Show this in the resume preview">${esc(finding.text)}</button></li>`
+                  : `<li class="is-${finding.status}">${esc(finding.text)}</li>`
+              )
+              .join('')}</ul>`
+          : ''
+      }
+      ${check.id === 'blind' && report.blindText ? `<pre class="prompt-box">${esc(report.blindText)}</pre>` : ''}
     </div>
-    <p class="screen-summary">${esc(check.summary)}</p>
-    ${
-      check.findings.length
-        ? `<ul class="screen-findings">${check.findings
-            .map((finding) =>
-              finding.target
-                ? `<li class="is-${finding.status}"><button class="screen-jump" type="button" data-jump="${esc(
-                    finding.target
-                  )}" title="Show this in the resume preview">${esc(finding.text)}</button></li>`
-                : `<li class="is-${finding.status}">${esc(finding.text)}</li>`
-            )
-            .join('')}</ul>`
-        : ''
-    }
-    ${check.id === 'blind' && report.blindText ? `<pre class="prompt-box">${esc(report.blindText)}</pre>` : ''}
-  </article>`;
+  </details>`;
 }
 
-/** Scrolls the live preview to a screening finding and flashes it. */
+/**
+ * Scrolls the live preview to a screening finding. The spot stays highlighted
+ * until the Screening tab is left, so the finding and the line can be compared.
+ */
 function jumpToResume(anchor) {
-  const el = document.querySelector('#resume [data-r-anchor="' + anchor + '"]');
+  activeAnchor = anchor || null;
+  applyPreviewMarks();
+
+  const el = anchorElement(activeAnchor);
   if (!el) {
-    toast('That part is not in the preview — the section may be hidden', true);
+    toast('That part is not in the preview yet — add the field, or switch on Highlight issues to see where it belongs', true);
     return;
   }
+
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.remove('is-flashed');
   void el.offsetWidth; /* restart the flash animation on a second tap */
@@ -1255,24 +1696,26 @@ function jumpToResume(anchor) {
 }
 
 function llmCard(check, prompt) {
-  return `<article class="screen-card is-info">
-    <div class="screen-head">
+  return `<details class="screen-card is-info">
+    <summary class="screen-head">
       <span class="screen-score">—</span>
       <span class="screen-name">${esc(check.name)}</span>
       <span class="screen-status">info</span>
+    </summary>
+    <div class="screen-body">
+      <p class="screen-summary">${esc(check.summary)}</p>
+      <ul class="screen-findings">
+        <li>1. Export the resume as Markdown with the button below.</li>
+        <li>2. Copy the prompt with the button below.</li>
+        <li>3. Paste the prompt into any chat model and attach the .md or .json file.</li>
+      </ul>
+      <div class="screen-actions">
+        <button class="btn" type="button" data-action="copy-llm">Copy prompt</button>
+        <button class="btn" type="button" data-action="export-md">Export resume as .md</button>
+      </div>
+      <pre class="prompt-box">${esc(prompt)}</pre>
     </div>
-    <p class="screen-summary">${esc(check.summary)}</p>
-    <ul class="screen-findings">
-      <li>1. Export the resume as Markdown with the button below.</li>
-      <li>2. Copy the prompt with the button below.</li>
-      <li>3. Paste the prompt into any chat model and attach the .md file.</li>
-    </ul>
-    <div class="screen-actions">
-      <button class="btn" type="button" data-action="copy-llm">Copy prompt</button>
-      <button class="btn" type="button" data-action="export-md">Export resume as .md</button>
-    </div>
-    <pre class="prompt-box">${esc(prompt)}</pre>
-  </article>`;
+  </details>`;
 }
 
 function scheduleScreenRefresh() {
@@ -1300,10 +1743,8 @@ function copyRaw(text, message) {
 async function exportScreenMd() {
   const name = slugify(state.profile.name || 'resume') + '-resume.md';
   try {
-    const blob = new Blob([toMarkdown(state)], { type: 'text/markdown' });
-    const result = await saveBlob(blob, name);
-    if (result === 'downloaded') toast('Markdown saved — attach it to the LLM chat');
-    else if (result === 'opened') showExportSheet(blob, name, 'md');
+    const file = new File([toMarkdown(state)], name, { type: 'text/markdown' });
+    await deliverFile(file, 'md');
   } catch (error) {
     console.error(error);
     toast('Could not write that file', true);
@@ -1322,28 +1763,330 @@ const SECTIONS = [
 
 function renderTabs() {
   const tabs = document.getElementById('tabs');
-  tabs.innerHTML = SECTIONS.map((section, index) => {
-    const firstOfTool = section.group === 'tool' && (index === 0 || SECTIONS[index - 1].group !== 'tool');
-    const classes = ['tab'];
-    if (section.id === ui.section) classes.push('is-active');
-    if (firstOfTool) classes.push('is-right');
-    return `<button class="${classes.join(' ')}" type="button" role="tab" aria-selected="${
-      section.id === ui.section
-    }" data-tab="${section.id}">${esc(section.label)}</button>`;
+  if (!tabs) return;
+
+  tabs.innerHTML = SECTIONS.map((section) => {
+    const active = section.id === ui.section;
+    return `<button class="tab${active ? ' is-active' : ''}" type="button" role="tab"
+      id="tab-${section.id}" aria-selected="${active}" aria-controls="editor-panel"
+      tabindex="${active ? '0' : '-1'}" data-tab="${section.id}">${esc(section.label)}</button>`;
   }).join('');
 
   const active = tabs.querySelector('.tab.is-active');
   if (active) {
     requestAnimationFrame(() => {
-      active.scrollIntoView({ block: 'nearest', inline: 'center' });
+      const left = active.offsetLeft - tabs.clientWidth / 2 + active.offsetWidth / 2;
+      tabs.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
     });
   }
+
+  const panel = document.getElementById('editor-panel');
+  if (panel) panel.setAttribute('aria-labelledby', 'tab-' + ui.section);
 }
 
 function renderEditor() {
   const panel = document.getElementById('editor-panel');
   const section = SECTIONS.find((item) => item.id === ui.section) || SECTIONS[0];
-  panel.innerHTML = section.render();
+  panel.innerHTML = guidedPanelHtml() + section.render();
+  decorateEditor();
+}
+
+/* -------------------------------------------------------------------- */
+/* guided mode: a step-by-step builder that follows the selected market   */
+/* -------------------------------------------------------------------- */
+
+function guidedSteps() {
+  const region = currentRegion();
+  const specs = regionFields(region);
+  const steps = [
+    {
+      id: 'identity',
+      section: 'profile',
+      title: 'Name and headline',
+      body:
+        'Start with the two lines every reader sees first: your name, and a headline that states the role you want. Keep the headline under about 120 characters.',
+      done: () => Boolean(state.profile.name.trim() && state.profile.headline.trim())
+    }
+  ];
+
+  if (specs.length) {
+    steps.push({
+      id: 'region',
+      section: 'profile',
+      title: REGION_LABELS[region] + ' details',
+      body: `This market expects ${specs.length} extra field${specs.length === 1 ? '' : 's'}${
+        specs.some((spec) => spec.required) ? ', and the required ones are what a screener looks for before anything else' : ''
+      }. Upload or fill them in Profile, under ${REGION_LABELS[region]} details.`,
+      done: () => missingRequiredFields(state).length === 0
+    });
+  }
+
+  steps.push(
+    {
+      id: 'contact',
+      section: 'profile',
+      title: 'Contact line',
+      body: 'Email and phone are non-negotiable, a city is expected, and a LinkedIn or portfolio link gives a reviewer somewhere to go.',
+      done: () =>
+        Boolean(
+          state.profile.email.trim() &&
+            state.profile.phone.trim() &&
+            state.profile.location.trim() &&
+            (state.profile.linkedin.trim() || state.profile.website.trim())
+        )
+    },
+    {
+      id: 'summary',
+      section: 'profile',
+      title: 'Summary',
+      body: 'Two or three lines: what you do, at what level, and what you are looking for. Between 40 and 600 characters is the range this app scores.',
+      done: () => state.profile.summary.trim().length >= 40
+    },
+    {
+      id: 'experience',
+      section: 'experience',
+      title: 'Roles and achievements',
+      body: 'Every role needs a title, an employer and dates. Aim for two or more bullets composed as outcome + number, since quantified bullets carry the most weight.',
+      done: () =>
+        state.experience.length > 0 &&
+        state.experience.every((item) => item.role.trim() && item.company.trim() && item.start.trim()) &&
+        state.experience.every((item) => splitLines(item.highlights).length >= 2)
+    },
+    {
+      id: 'education',
+      section: 'education',
+      title: 'Education',
+      body: 'School, degree and years. Certifications live beside Education in their own sub-tab, with issuer and date so a screener can verify them.',
+      done: () => state.education.some((item) => (item.school.trim() || item.degree.trim()) && item.start.trim())
+    },
+    {
+      id: 'skills',
+      section: 'skills',
+      title: 'Skills',
+      body: 'Three to six groups, each with a short list. This is where keyword matching earns its points, so use the wording of the advert.',
+      done: () => state.skills.filter((item) => item.items.trim()).length >= 2
+    },
+    {
+      id: 'review',
+      section: 'screening',
+      title: 'Review the score',
+      body: 'Screening scores the resume for the selected market from eleven checks. Fix anything under 100, then export.',
+      done: () => {
+        try {
+          return evaluateResume(state).score >= 100;
+        } catch (error) {
+          return false;
+        }
+      }
+    }
+  );
+
+  return steps;
+}
+
+function guidedPanelHtml() {
+  if (!ui.guided) return '';
+  const steps = guidedSteps();
+  const total = steps.length;
+  const index = Math.max(0, Math.min(ui.guidedStep || 0, total - 1));
+  const step = steps[index];
+  const complete = steps.filter((item) => item.done()).length;
+  const percent = Math.round((complete / total) * 100);
+
+  return `<section class="guided" aria-label="Guided mode">
+    <div class="guided-head">
+      <span class="guided-kicker">Guided mode · step ${index + 1} of ${total}</span>
+      <button class="btn btn-sm btn-ghost" type="button" data-action="guided-exit">Exit</button>
+    </div>
+    <div class="guided-bar" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
+      <span style="width:${percent}%"></span>
+    </div>
+    <h3 class="guided-title">${esc(step.title)}</h3>
+    <p class="guided-body">${esc(step.body)}</p>
+    <p class="guided-state ${step.done() ? 'is-done' : ''}">${step.done() ? 'Complete.' : 'Still to do.'}</p>
+    <div class="guided-actions">
+      <button class="btn btn-sm" type="button" data-action="guided-prev" ${index === 0 ? 'disabled' : ''}>Back</button>
+      <button class="btn btn-sm" type="button" data-action="guided-goto">Open this section</button>
+      <button class="btn btn-sm btn-primary" type="button" data-action="guided-next">${
+        index === total - 1 ? 'Finish' : 'Next step'
+      }</button>
+    </div>
+    <ol class="guided-list">
+      ${steps
+        .map(
+          (item, at) =>
+            `<li class="${item.done() ? 'is-done' : ''}${at === index ? ' is-current' : ''}">
+              <span class="guided-dot" aria-hidden="true">${item.done() ? '✓' : at + 1}</span>${esc(item.title)}
+            </li>`
+        )
+        .join('')}
+    </ol>
+  </section>`;
+}
+
+function setGuided(on) {
+  ui.guided = Boolean(on);
+  if (ui.guided) {
+    const steps = guidedSteps();
+    const firstOpen = steps.findIndex((step) => !step.done());
+    ui.guidedStep = firstOpen === -1 ? 0 : firstOpen;
+  }
+  saveUi();
+  renderEditor();
+}
+
+function guidedMove(delta) {
+  const steps = guidedSteps();
+  const next = Math.max(0, Math.min((ui.guidedStep || 0) + delta, steps.length - 1));
+  ui.guidedStep = next;
+  saveUi();
+  goTo(steps[next].section);
+  const panel = document.getElementById('editor-panel');
+  if (panel) panel.scrollTop = 0;
+}
+
+/* -------------------------------------------------------------------- */
+/* the app tour                                                          */
+/* -------------------------------------------------------------------- */
+
+const TOUR_STEPS = [
+  {
+    selector: '[data-tab="profile"]',
+    title: 'The sections',
+    body: 'Seven sections live in this dock: Profile, Experience, Education, Projects, Skills, Screening and Settings. Everything you type saves as you go.'
+  },
+  {
+    selector: '#editor-panel',
+    title: 'The builder',
+    body: 'The left pane is the form. Its fields follow the hiring region you pick, so a US resume never asks for a photo and a Gulf resume always asks for nationality and visa status.'
+  },
+  {
+    selector: '.preview',
+    title: 'The live preview',
+    body: 'The right pane is the resume itself, on A4 paper, rebuilt on every keystroke. What you see is what the exports contain.'
+  },
+  {
+    selector: '#region-btn',
+    title: 'Hiring region',
+    body: 'Pick the market you are applying to. It sets the page ceiling, which personal details the builder shows, how the resume is scored, and the AI prompt.'
+  },
+  {
+    selector: '#regulations-toggle',
+    title: 'Highlight issues',
+    body: 'Turn this on to mark every field that breaks a resume convention, in the preview and in the form. Tap a marked line to jump to the field.'
+  },
+  {
+    selector: '[data-dock="save"]',
+    title: 'Save a version',
+    body: 'Save snapshots the whole resume into this browser, up to forty versions, each one restorable from Settings → History.'
+  },
+  {
+    selector: '.file-trigger',
+    title: 'Import',
+    body: 'Bring a resume back from JSON, Markdown, TXT, PDF, DOCX, PNG or ZIP. Every format this app exports rebuilds the identical preview.'
+  },
+  {
+    selector: '[data-dock="export"]',
+    title: 'Export',
+    body: 'Choose any combination of PDF, DOCX, PNG, TXT, Markdown and JSON. On a phone the finished file goes straight to the system share sheet.'
+  },
+  {
+    selector: '[data-tab="screening"]',
+    title: 'Screening',
+    body: 'Eleven checks score the resume for the selected market, each naming the published standard behind it, with findings that jump to the line they concern.'
+  },
+  {
+    selector: '[data-tab="settings"]',
+    title: 'Settings',
+    body: 'Appearance, data, export, history and releases. The scoring guide, this tour and guided mode live here too.'
+  }
+];
+
+function tourElement(step) {
+  const el = document.querySelector(step.selector);
+  return el instanceof HTMLElement ? el : null;
+}
+
+function endTour() {
+  const overlay = document.getElementById('app-tour');
+  if (overlay) overlay.remove();
+  ui.tourSeen = true;
+  saveUi();
+}
+
+function renderTourStep(index) {
+  const overlay = document.getElementById('app-tour');
+  if (!overlay) return;
+  const step = TOUR_STEPS[index];
+  if (!step) {
+    endTour();
+    return;
+  }
+
+  const target = tourElement(step);
+  if (!target) {
+    renderTourStep(index + 1);
+    return;
+  }
+
+  const rect = target.getBoundingClientRect();
+  const pad = 6;
+  const spot = overlay.querySelector('.tour-spot');
+  const card = overlay.querySelector('.tour-card');
+  if (!spot || !card) return;
+
+  spot.style.left = Math.max(4, rect.left - pad) + 'px';
+  spot.style.top = Math.max(4, rect.top - pad) + 'px';
+  spot.style.width = Math.min(window.innerWidth - 8, rect.width + pad * 2) + 'px';
+  spot.style.height = Math.min(window.innerHeight - 8, rect.height + pad * 2) + 'px';
+
+  card.innerHTML = `
+    <p class="tour-kicker">Tour · ${index + 1} of ${TOUR_STEPS.length}</p>
+    <h3>${esc(step.title)}</h3>
+    <p>${esc(step.body)}</p>
+    <div class="tour-actions">
+      <button class="btn btn-sm btn-ghost" type="button" data-tour-skip>Skip the tour</button>
+      <span class="tour-spacer"></span>
+      <button class="btn btn-sm" type="button" data-tour-prev ${index === 0 ? 'disabled' : ''}>Back</button>
+      <button class="btn btn-sm btn-primary" type="button" data-tour-next>${
+        index === TOUR_STEPS.length - 1 ? 'Done' : 'Next'
+      }</button>
+    </div>
+  `;
+
+  const cardWidth = Math.min(320, window.innerWidth - 32);
+  card.style.width = cardWidth + 'px';
+  const below = rect.bottom + 12;
+  const height = card.offsetHeight || 180;
+  const placeAbove = below + height > window.innerHeight - 12 && rect.top > height + 20;
+  card.style.left = Math.max(12, Math.min(rect.left, window.innerWidth - cardWidth - 12)) + 'px';
+  card.style.top = (placeAbove ? Math.max(12, rect.top - height - 12) : below) + 'px';
+
+  overlay.dataset.index = String(index);
+}
+
+function startTour(index) {
+  endTour();
+  const overlay = document.createElement('div');
+  overlay.id = 'app-tour';
+  overlay.className = 'tour';
+  overlay.innerHTML = '<div class="tour-spot" aria-hidden="true"></div><div class="tour-card" role="dialog" aria-modal="true"></div>';
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (event) => {
+    const at = Number(overlay.dataset.index || 0);
+    if (event.target.closest('[data-tour-skip]')) endTour();
+    else if (event.target.closest('[data-tour-next]')) {
+      if (at === TOUR_STEPS.length - 1) endTour();
+      else renderTourStep(at + 1);
+    } else if (event.target.closest('[data-tour-prev]')) renderTourStep(Math.max(0, at - 1));
+  });
+
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') endTour();
+  });
+
+  renderTourStep(index || 0);
 }
 
 function applyAppearance() {
@@ -1352,6 +2095,234 @@ function applyAppearance() {
   root.dataset.color = state.settings.colorMode;
   root.dataset.font = state.settings.font;
   root.dataset.density = state.settings.density;
+  renderRegionPicker();
+}
+
+/* --- hiring region: a button in the preview header, always in reach --- */
+
+const REGION_HINTS = {
+  emea: 'Two pages, exact dates, DACH photo conventions',
+  us: 'One to two pages, no personal details, quantified bullets',
+  gcc: 'Nationality, visa status and languages are screening data',
+  apac: 'Detailed education, certifications, language levels',
+  latam: 'Two to three pages, language proficiency, personal tone',
+  anz: 'Right-to-work status, STAR bullets, named referees'
+};
+
+function currentRegion() {
+  return REGION_IDS.indexOf(state.settings.region) !== -1 ? state.settings.region : 'emea';
+}
+
+function renderRegionPicker() {
+  const label = document.getElementById('region-label');
+  const menu = document.getElementById('region-menu');
+  if (!label || !menu) return;
+
+  const active = currentRegion();
+  label.textContent = REGION_LABELS[active];
+  menu.innerHTML = REGION_IDS.map(
+    (id) => `<button class="region-option${id === active ? ' is-on' : ''}" type="button" role="option"
+      aria-selected="${id === active}" data-region="${id}">
+      <span class="region-option-name">${esc(REGION_LABELS[id])}</span>
+      <span class="region-option-note">${esc(REGION_HINTS[id])}</span>
+    </button>`
+  ).join('');
+}
+
+function setRegionMenuOpen(open) {
+  const btn = document.getElementById('region-btn');
+  const menu = document.getElementById('region-menu');
+  if (!btn || !menu) return;
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  if (open) {
+    const option = menu.querySelector('[aria-selected="true"]') || menu.querySelector('button');
+    if (option) option.focus({ preventScroll: true });
+  }
+}
+
+/* -------------------------------------------------------------------- */
+/* the region scoring guide: one window, opened from Screening and       */
+/* from Settings, with a collapsible section per market                  */
+/* -------------------------------------------------------------------- */
+
+let guideOpener = null;
+
+/**
+ * Two different numbers, kept apart on purpose:
+ *  - fit: the Regional fit check alone, scored against that market's criteria;
+ *  - overall: the average of every scored check in that market, which is the number
+ *    the Screening tab shows at the top.
+ */
+function regionScores(id) {
+  try {
+    const report = evaluateResume({
+      ...state,
+      settings: { ...state.settings, region: id }
+    });
+    const check = report.checks.find((item) => item.id === 'region');
+    const scored = report.checks.filter((item) => item.id !== 'llm' && item.status !== 'info');
+    return {
+      fit: check ? check.score : null,
+      overall: report.score,
+      checks: scored.length
+    };
+  } catch (error) {
+    return { fit: null, overall: null, checks: 0 };
+  }
+}
+
+function guideCriterionHtml(criterion) {
+  const scored = criterion.weightLabel.indexOf('−') === 0;
+  return `<section class="guide-criterion">
+    <div class="guide-criterion-head">
+      <h4>${esc(criterion.title)}</h4>
+      <span class="guide-weight${scored ? '' : ' is-info'}">${esc(criterion.weightLabel)}</span>
+    </div>
+    <p class="guide-rule">${esc(criterion.rule)}</p>
+    <dl class="guide-facts">
+      <dt>Measured</dt>
+      <dd>${esc(criterion.measured)}</dd>
+      <dt>Passes when</dt>
+      <dd>${esc(criterion.pass)}</dd>
+    </dl>
+  </section>`;
+}
+
+function guideWeightsHtml(id) {
+  const weights = REGION_SCORE_WEIGHTS[id] || {};
+  const rows = Object.keys(CHECK_LABELS)
+    .map((key) => ({ label: CHECK_LABELS[key], weight: typeof weights[key] === 'number' ? weights[key] : 1 }))
+    .sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label));
+  return rows
+    .map((row) => `<li><span>${esc(row.label)}</span><span class="guide-weight-x">×${row.weight}</span></li>`)
+    .join('');
+}
+
+function guideRegionHtml(guide, activeId) {
+  const scores = regionScores(guide.id);
+  const selected = guide.id === activeId;
+  const scored = scores.fit !== null && scores.fit < 100;
+
+  return `<details class="guide-region" data-guide-region="${esc(guide.id)}"${selected ? ' open' : ''}>
+    <summary>
+      <h3 class="guide-region-name">${esc(guide.label)}
+        ${selected ? '<span class="guide-current">Selected</span>' : ''}
+        <span class="guide-region-score${scored ? ' is-warn' : ''}" title="Regional fit in this market">${
+          scores.fit === null ? '—' : 'fit ' + scores.fit
+        }</span>
+      </h3>
+      <span class="guide-region-tagline">${esc(guide.tagline)}</span>
+    </summary>
+    <div class="guide-region-body">
+      <p class="guide-intro">${esc(guide.intro)}</p>
+      <p class="guide-pagerange"><strong>Length:</strong> ${esc(guide.pageRange)}</p>
+      <div class="guide-scoreline">
+        <span>Regional fit <strong>${scores.fit === null ? '—' : scores.fit + '/100'}</strong> — this market’s own rules</span>
+        <span>Headline in this market <strong>${scores.overall === null ? '—' : scores.overall + '/100'}</strong> — every check, weighted for this market</span>
+      </div>
+
+      <h4 class="guide-subtitle">How the headline is weighted here</h4>
+      <ul class="guide-weights">${guideWeightsHtml(guide.id)}</ul>
+
+      <h4 class="guide-subtitle">Where the points come from</h4>
+      ${guide.criteria.map(guideCriterionHtml).join('')}
+
+      <h4 class="guide-subtitle">Measured by the other checks</h4>
+      <ul class="guide-elsewhere">${guide.elsewhere.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>
+
+      <h4 class="guide-subtitle">The recruiter’s checklist</h4>
+      <ol class="guide-checklist">${guide.checklist.map((line) => `<li>${esc(line)}</li>`).join('')}</ol>
+    </div>
+  </details>`;
+}
+
+function closeRegionGuide() {
+  const sheet = document.getElementById('region-guide');
+  if (!sheet) return;
+  sheet.remove();
+  document.body.classList.remove('guide-open');
+  if (guideOpener && typeof guideOpener.focus === 'function') guideOpener.focus({ preventScroll: true });
+  guideOpener = null;
+}
+
+function openRegionGuide(focusId, source) {
+  closeRegionGuide();
+
+  const activeId = REGION_IDS.indexOf(focusId) !== -1 ? focusId : currentRegion();
+  // Put the chosen market first so the window opens on the one in use.
+  const ordered = REGION_GUIDES.slice().sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0));
+
+  guideOpener = document.activeElement;
+  const from = source === 'settings' ? 'Settings' : 'Screening';
+
+  const sheet = document.createElement('div');
+  sheet.id = 'region-guide';
+  sheet.className = 'guide';
+  sheet.innerHTML = `
+    <div class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guide-title" tabindex="-1">
+      <header class="guide-head">
+        <div class="guide-heading">
+          <p class="guide-kicker">${esc(from)} · scoring guide</p>
+          <h2 id="guide-title">How each region is scored</h2>
+          <p class="guide-sub">Six markets, the criteria each one screens for, and the points they carry.</p>
+        </div>
+        <button class="icon-btn" type="button" data-guide-close aria-label="Close the scoring guide" title="Close">✕</button>
+      </header>
+
+      <div class="guide-body">
+        <p class="guide-note">The headline in Screening is one number, weighted for the market you select: every check counts by the
+        multiplier listed inside its region, and the market’s own rules carry the largest share. The <strong>fit</strong>
+        pill beside each market is those rules alone, with nothing else mixed in — which is why it can sit below the
+        headline. Each criterion subtracts from 100 once.</p>
+        ${ordered.map((guide) => guideRegionHtml(guide, activeId)).join('')}
+        <details class="guide-region">
+          <summary>
+            <h3 class="guide-region-name">Published standards this app follows</h3>
+            <span class="guide-region-tagline">${METHOD_SOURCES.length} sources, and the rule each one set</span>
+          </summary>
+          <div class="guide-region-body">
+            <p class="guide-intro">Every rule above traces to a published source. Each check card names the one it
+            applies under “Based on”. What each source says, the strength of its evidence, and the rule it set here:</p>
+            ${METHOD_SOURCES.map(
+              (source) => `<h4 class="guide-subtitle">${esc(source.name)} — ${esc(source.publisher)}
+                <span class="guide-evidence">${esc(source.evidence)}</span></h4>
+              <p class="guide-intro">${esc(source.claim)}</p>
+              <p class="guide-pagerange"><strong>Rule applied:</strong> ${esc(source.rule)}</p>
+              <p class="guide-intro"><a href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">${esc(
+                source.publisher
+              )}</a></p>`
+            ).join('')}
+            <h4 class="guide-subtitle">What this research does not support</h4>
+            <p class="guide-intro">${esc(STANDARDS_CAVEAT)}</p>
+          </div>
+        </details>
+        <p class="guide-sources">Based on published ATS behaviour (Jobscan and platform parser guidance) and current
+        CV practice for each market: Tadween, LoopCV, Resume Optimizer Pro, ApplyGoat, Rezi, ResumeMate and the
+        Jobscan date rules. Practice varies by employer, so treat these as strong conventions rather than law.</p>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(sheet);
+  document.body.classList.add('guide-open');
+
+  const card = sheet.querySelector('.guide-card');
+  if (card) card.focus({ preventScroll: true });
+}
+
+function bindRegionGuide() {
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('[data-guide-close]')) {
+      closeRegionGuide();
+      return;
+    }
+    if (event.target.id === 'region-guide') closeRegionGuide();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.getElementById('region-guide')) closeRegionGuide();
+  });
 }
 
 /* -------------------------------------------------------------------- */
@@ -1371,7 +2342,9 @@ function renderRole(item) {
         ${dates ? `<span class="r-entry-dates">${esc(dates)}</span>` : ''}
       </div>
       ${sub ? `<p class="r-entry-sub">${sub}</p>` : ''}
-      ${bullets.length ? `<ul class="r-bullets">${bullets.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
+      ${bullets.length ? `<ul class="r-bullets">${bullets
+        .map((line, index) => `<li data-r-anchor="experience:${esc(item.id)}:b${index}">${esc(line)}</li>`)
+        .join('')}</ul>` : ''}
       ${
         state.settings.showTags && tags.length
           ? `<p class="r-tags">${tags.map((tag) => esc(tag)).join(' · ')}</p>`
@@ -1395,7 +2368,9 @@ function renderEducation(item) {
         ${dates ? `<span class="r-entry-dates">${esc(dates)}</span>` : ''}
       </div>
       ${sub ? `<p class="r-entry-sub">${sub}</p>` : ''}
-      ${details.length ? `<ul class="r-bullets">${details.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
+      ${details.length ? `<ul class="r-bullets">${details
+        .map((line, index) => `<li data-r-anchor="education:${esc(item.id)}:b${index}">${esc(line)}</li>`)
+        .join('')}</ul>` : ''}
     </div>
   `;
 }
@@ -1431,7 +2406,7 @@ function renderCertifications(items) {
             item.name
           )}</a>`
         : esc(item.name);
-      return `<tr>
+      return `<tr data-r-anchor="certifications:${esc(item.id)}">
         <td class="r-cert-name">${name}</td>
         <td>${esc(item.issuer || '')}</td>
         <td class="r-cert-date">${esc(item.date || '')}</td>
@@ -1471,6 +2446,10 @@ function renderPreview() {
 
   if (settings.showSummary && profile.summary.trim()) {
     body.push(`<section class="r-section" data-r-anchor="summary"><p class="r-summary">${esc(profile.summary)}</p></section>`);
+  } else if (settings.showSummary && regulationsOn()) {
+    body.push(
+      `<section class="r-section" data-r-anchor="summary"><p class="r-summary r-missing">Two or three lines on what you do and what you are looking for belong here.</p></section>`
+    );
   }
 
   const roles = state.experience.filter((item) => item.role || item.company);
@@ -1529,17 +2508,39 @@ function renderPreview() {
         </div>
       </div>
     `;
+    applyPreviewMarks();
     return;
   }
 
+  const logistics = logisticsLine(state);
+  const photo = visiblePhoto(state);
+
   resume.innerHTML = `
-    <header class="r-header">
-      <h1 class="r-name" data-r-anchor="name">${esc(profile.name || 'Your name')}</h1>
-      ${profile.headline ? `<p class="r-headline" data-r-anchor="headline">${esc(profile.headline)}</p>` : ''}
-      ${contact.length ? `<p class="r-contact" data-r-anchor="contact">${contact.join(' <span class="r-dot">·</span> ')}</p>` : ''}
+    <header class="r-header${photo ? ' has-photo' : ''}">
+      <div class="r-header-text">
+        <h1 class="r-name" data-r-anchor="name">${esc(profile.name || 'Your name')}</h1>
+        ${
+          profile.headline
+            ? `<p class="r-headline" data-r-anchor="headline">${esc(profile.headline)}</p>`
+            : regulationsOn()
+            ? `<p class="r-headline r-missing" data-r-anchor="headline">A one-line headline belongs here: the role you are applying for.</p>`
+            : ''
+        }
+        ${
+          contact.length
+            ? `<p class="r-contact" data-r-anchor="contact">${contact.join(' <span class="r-dot">·</span> ')}</p>`
+            : regulationsOn()
+            ? `<p class="r-contact r-missing" data-r-anchor="contact">Email, phone, city and a profile link belong on this line.</p>`
+            : ''
+        }
+        ${logistics ? `<p class="r-logistics" data-r-anchor="contact">${esc(logistics)}</p>` : ''}
+      </div>
+      ${photo ? `<img class="r-photo" src="${esc(photo)}" alt="Profile photo" />` : ''}
     </header>
     ${body.join('')}
   `;
+
+  applyPreviewMarks();
 }
 
 /* -------------------------------------------------------------------- */
@@ -1613,28 +2614,109 @@ async function zipFiles(files) {
   return new Blob([createZip(entries)], { type: 'application/zip' });
 }
 
+function fileKind(name) {
+  const dot = String(name || '').lastIndexOf('.');
+  return dot === -1 ? 'file' : name.slice(dot + 1).toLowerCase();
+}
+
+/**
+ * iPhones and iPads get the system share sheet, which is the menu a user expects
+ * there: Files, Mail, Messages, WhatsApp, contacts and the rest. Desktop keeps a
+ * plain download, which is what a desktop means by "Download".
+ */
+function prefersShareSheet() {
+  const ua = navigator.userAgent || '';
+  const isIos = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
+  const isAndroid = /Android/.test(ua);
+  return (isIos || isAndroid) && typeof navigator.share === 'function';
+}
+
+/** Returns true when the share sheet was shown (shared or dismissed). */
+async function tryShare(files, name) {
+  if (!prefersShareSheet()) return false;
+  const outcome = await shareFiles(files, name);
+  if (outcome === 'shared') {
+    toast('Ready to send');
+    return true;
+  }
+  return outcome === 'cancelled';
+}
+
+/** Shares one finished file, or falls back to a download and the export sheet. */
+async function deliverFile(file, kind) {
+  if (await tryShare([file], file.name)) return;
+  try {
+    const result = await saveBlob(file, file.name);
+    if (result === 'downloaded') toast('Saved ' + file.name);
+    else if (result === 'opened') showExportSheet(file, file.name, kind, [file]);
+  } catch (error) {
+    console.error(error);
+    toast('Could not write that file', true);
+  }
+}
+
 async function exportDownload() {
   try {
     const files = await buildExportFiles();
     if (!files.length) return;
 
     if (files.length === 1) {
-      const file = files[0];
-      const kind = (file.name.split('.').pop() || '').toLowerCase();
-      const result = await saveBlob(file, file.name);
-      if (result === 'downloaded') toast('Saved ' + file.name);
-      else if (result === 'opened') showExportSheet(file, file.name, kind);
+      await deliverFile(files[0], fileKind(files[0].name));
       return;
     }
 
     const zipName = exportBaseName() + '.zip';
     const zip = await zipFiles(files);
+    const zipFile = new File([zip], zipName, { type: 'application/zip' });
+
+    if (await tryShare([zipFile], zipName)) return;
+
     const result = await saveBlob(zip, zipName);
     if (result === 'downloaded') toast(files.length + ' files saved as ' + zipName);
-    else if (result === 'opened') showExportSheet(zip, zipName, 'zip');
+    else if (result === 'opened') showExportSheet(zip, zipName, 'zip', [zipFile]);
   } catch (error) {
     console.error(error);
     toast('Could not create the export: ' + (error && error.message ? error.message : 'unknown error'), true);
+  }
+}
+
+/**
+ * The full backup: every field, every setting, and both copies of the portrait — the
+ * display one and the upload kept whole — in one .json that restores the resume as it is.
+ * Unlike the ordinary JSON export, it says so in the file itself, so a reader can tell a
+ * complete archive from a list export.
+ */
+function fullBackupJson() {
+  const photo = state.profile.photoFull || state.profile.photo || '';
+  return JSON.stringify(
+    {
+      app: 'gmo-resume-manager',
+      kind: 'full-backup',
+      schema: 2,
+      version: APP_VERSION,
+      exportedAt: new Date().toISOString(),
+      photo: {
+        included: Boolean(photo),
+        quality: state.profile.photoFull ? (state.profile.photoFull === state.profile.photo ? 'display' : 'original') : 'none',
+        approxKb: photo ? Math.round((photo.length * 3) / 4 / 1024) : 0
+      },
+      data: JSON.parse(JSON.stringify(state))
+    },
+    null,
+    2
+  );
+}
+
+async function exportFullBackup() {
+  try {
+    const stamp = exportBaseName().split('_').slice(1).join('_');
+    const name = slugify(state.profile.name || 'resume') + '-full-backup_' + stamp + '.json';
+    const file = new File([fullBackupJson()], name, { type: 'application/json' });
+    toast('Building the full backup…');
+    await deliverFile(file, 'json');
+  } catch (error) {
+    console.error(error);
+    toast('Could not build the full backup', true);
   }
 }
 
@@ -1679,6 +2761,44 @@ function importFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
+/**
+ * Loads a resume pasted as JSON into Settings. Same result as importing a .json
+ * file, without needing the file picker: useful on a phone, where a file has to be
+ * put through the share sheet first.
+ */
+function applyPastedJson() {
+  const area = document.getElementById('paste-json');
+  const text = area ? area.value.trim() : '';
+  if (!text) {
+    toast('Paste the resume JSON first', true);
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    toast('That is not valid JSON', true);
+    return;
+  }
+
+  const record = parsed && typeof parsed === 'object' ? parsed : {};
+  const data = record.data && typeof record.data === 'object' ? record.data : record;
+  if (!data || !data.profile || typeof data.profile !== 'object') {
+    toast('That JSON carries no resume data', true);
+    return;
+  }
+
+  snapshotQuietly();
+  state = normalize(data);
+  applyAppearance();
+  goTo('profile');
+  renderPreview();
+  save();
+  flushSave();
+  toast('Resume loaded — the previous version is in History');
+}
+
 function loadExample() {
   if (hasAnyData() && !window.confirm('Replace what you have with the example resume?')) return;
   state = exampleState();
@@ -1691,16 +2811,37 @@ function loadExample() {
 }
 
 async function runVerify() {
-  toast('Running the export / import check…');
+  toast('Running the export / import suite…');
   const button = document.querySelector('[data-action="verify"]');
   if (button) button.disabled = true;
   try {
     const report = await runRoundTrip();
+    const summary =
+      report.passed +
+      '/' +
+      report.total +
+      ' round trips across ' +
+      report.variants +
+      ' variants; ' +
+      report.invariantsPassed +
+      '/' +
+      report.invariantsTotal +
+      ' screening reports sane';
+
+    const output = document.getElementById('verify-report');
+    if (output) {
+      output.hidden = false;
+      output.textContent = formatReport(report);
+      output.classList.toggle('is-bad', !report.ok);
+    }
+
     if (report.ok) {
-      toast('Verify passed: ' + report.passed + '/' + report.total + ' round trips exact');
+      toast('Verify passed: ' + summary);
+      showHint('All checks passed');
     } else {
       console.error('[GMO resume verify]', formatReport(report));
-      toast('Verify found ' + report.failures.length + ' problem(s) — details in the console', true);
+      const problems = report.failures.length + report.invariantFailures.length;
+      toast('Verify found ' + problems + ' problem(s) — the report is below the button', true);
     }
   } catch (error) {
     console.error(error);
@@ -1710,6 +2851,73 @@ async function runVerify() {
 }
 
 function handleAction(action, button) {
+  if (action === 'remove-photo') {
+    state.profile.photo = '';
+    state.profile.photoFull = '';
+    save();
+    renderEditor();
+    renderPreview();
+    toast('Photo removed');
+    return;
+  }
+
+  if (action === 'full-backup') {
+    exportFullBackup();
+    return;
+  }
+
+  if (action === 'guided-exit') {
+    setGuided(false);
+    return;
+  }
+
+  if (action === 'guided-toggle') {
+    setGuided(!ui.guided);
+    if (ui.guided) goTo('profile');
+    return;
+  }
+
+  if (action === 'guided-next') {
+    const steps = guidedSteps();
+    if ((ui.guidedStep || 0) >= steps.length - 1) {
+      setGuided(false);
+      toast('Guided mode finished — the score is in Screening');
+      return;
+    }
+    guidedMove(1);
+    return;
+  }
+
+  if (action === 'guided-prev') {
+    guidedMove(-1);
+    return;
+  }
+
+  if (action === 'guided-goto') {
+    const steps = guidedSteps();
+    const step = steps[Math.max(0, Math.min(ui.guidedStep || 0, steps.length - 1))];
+    goTo(step.section);
+    return;
+  }
+
+  if (action === 'tour-start') {
+    startTour(0);
+    return;
+  }
+
+  if (action === 'screen-expand' || action === 'screen-collapse') {
+    const open = action === 'screen-expand';
+    document.querySelectorAll('#screen-results .screen-card').forEach((card) => {
+      card.open = open;
+    });
+    return;
+  }
+
+  if (action === 'region-guide') {
+    openRegionGuide(currentRegion(), ui.section === 'settings' ? 'settings' : 'screening');
+    return;
+  }
+
   if (action === 'export-download') {
     exportDownload();
     return;
@@ -1761,6 +2969,11 @@ function handleAction(action, button) {
 
   if (action === 'verify') {
     runVerify();
+    return;
+  }
+
+  if (action === 'apply-paste') {
+    applyPastedJson();
     return;
   }
 
@@ -1834,7 +3047,10 @@ function applySetting(key, value) {
   else if (key === 'colorMode') state.settings.colorMode = value === 'bw' ? 'bw' : 'color';
   else if (key === 'font') state.settings.font = value === 'serif' ? 'serif' : 'sans';
   else if (key === 'density') state.settings.density = value === 'compact' ? 'compact' : 'comfortable';
-  else return;
+  else if (key === 'region') {
+    if (REGION_IDS.indexOf(value) === -1) return;
+    state.settings.region = value;
+  } else return;
 
   applyAppearance();
   renderEditor();
@@ -1849,6 +3065,7 @@ function goTo(id) {
   const editor = document.getElementById('editor');
   if (editor) ui.scrolls[ui.section] = editor.scrollTop;
 
+  if (id !== 'screening') activeAnchor = null;
   ui.section = id;
   saveUi();
   renderTabs();
@@ -1919,7 +3136,14 @@ function toast(message, isError) {
 function onPanelInput(event) {
   const target = event.target;
 
+  // A photo arrives as a change event only, so it is handled before the select guard.
+  if (target.dataset && target.dataset.photoInput !== undefined && event.type === 'change') {
+    handlePhotoInput(target);
+    return;
+  }
+
   if (event.type === 'change' && target.tagName !== 'SELECT') return;
+  if (target.dataset && target.dataset.paste) return;
 
   if (target.dataset && target.dataset.format) {
     exportSelection[target.dataset.format] = target.checked;
@@ -1938,6 +3162,7 @@ function onPanelInput(event) {
 
   save();
   renderPreview();
+  if (regulationsOn()) decorateEditor();
 
   if (target.type === 'checkbox' && path.indexOf('experience.') === 0) {
     const card = target.closest('.card');
@@ -2001,9 +3226,28 @@ function onDockClick(event) {
 }
 
 function bindEvents() {
-  document.getElementById('tabs').addEventListener('click', (event) => {
+  const tabs = document.getElementById('tabs');
+
+  tabs.addEventListener('click', (event) => {
     const tab = event.target.closest('[data-tab]');
-    if (tab) goTo(tab.dataset.tab);
+    if (!tab) return;
+    const id = tab.dataset.tab;
+    goTo(id);
+    const again = document.querySelector('#tabs [data-tab="' + id + '"]');
+    if (again) again.focus();
+  });
+
+  tabs.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const buttons = Array.from(document.querySelectorAll('#tabs [data-tab]'));
+    const at = buttons.findIndex((button) => button.dataset.tab === ui.section);
+    if (at === -1) return;
+    event.preventDefault();
+    const next = (at + (event.key === 'ArrowRight' ? 1 : buttons.length - 1)) % buttons.length;
+    const target = buttons[next].dataset.tab;
+    goTo(target);
+    const again = document.querySelector('#tabs [data-tab="' + target + '"]');
+    if (again) again.focus();
   });
 
   const panel = document.getElementById('editor-panel');
@@ -2034,13 +3278,61 @@ function bindEvents() {
 
   document.getElementById('resume').addEventListener('click', (event) => {
     const button = event.target.closest('[data-preview-action]');
-    if (!button) return;
-    if (button.dataset.previewAction === 'example') loadExample();
-    else goTo('profile');
+    if (button) {
+      if (button.dataset.previewAction === 'example') loadExample();
+      else goTo('profile');
+      return;
+    }
+
+    if (!regulationsOn()) return;
+    if (event.target.closest('a')) return;
+    const flagged = event.target.closest('[data-r-anchor].is-flagged');
+    if (!flagged) return;
+    const anchor = flagged.dataset.rAnchor;
+    const issue = previewIssues.find((item) => item.anchor === anchor && item.path);
+    if (!issue) return;
+    event.preventDefault();
+    focusField(issue.path);
+  });
+
+  const regulationsToggle = document.getElementById('regulations-toggle');
+  if (regulationsToggle) {
+    regulationsToggle.addEventListener('change', (event) => setRegulations(event.target.checked));
+  }
+
+  bindRegionGuide();
+
+  const regionBtn = document.getElementById('region-btn');
+  if (regionBtn) {
+    regionBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const menu = document.getElementById('region-menu');
+      setRegionMenuOpen(Boolean(menu && menu.hidden));
+    });
+  }
+
+  const regionMenu = document.getElementById('region-menu');
+  if (regionMenu) {
+    regionMenu.addEventListener('click', (event) => {
+      const option = event.target.closest('[data-region]');
+      if (!option) return;
+      setRegionMenuOpen(false);
+      applySetting('region', option.dataset.region);
+      if (regionBtn) regionBtn.focus();
+    });
+  }
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.region-picker')) return;
+    setRegionMenuOpen(false);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    setRegionMenuOpen(false);
   });
 
   document.getElementById('dock').addEventListener('click', onDockClick);
-  document.getElementById('btn-print').addEventListener('click', () => window.print());
 
   const fileInput = document.getElementById('file-input');
   fileInput.addEventListener('change', () => {
@@ -2097,6 +3389,9 @@ function init() {
 
   if (!SECTIONS.some((section) => section.id === ui.section)) ui.section = 'profile';
 
+  const regulationsToggle = document.getElementById('regulations-toggle');
+  if (regulationsToggle) regulationsToggle.checked = regulationsOn();
+
   applyAppearance();
   bindEvents();
   renderTabs();
@@ -2111,6 +3406,13 @@ function init() {
   });
 
   if (hasAnyData()) showHint('Restored from this device');
+
+  // A first visit gets the tour once; afterwards it is a button in Settings.
+  if (!ui.tourSeen) {
+    setTimeout(() => {
+      if (!ui.tourSeen) startTour(0);
+    }, 700);
+  }
 }
 
 init();

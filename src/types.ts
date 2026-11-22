@@ -7,6 +7,18 @@ export interface Profile {
   website: string;
   linkedin: string;
   summary: string;
+  /** Region-driven fields. Only the ones the selected market expects are shown in the builder. */
+  /** Data URL of the profile photo, already downscaled before it is stored. */
+  photo: string;
+  /** The upload kept whole, so a full backup restores the picture at its original quality. */
+  photoFull: string;
+  nationality: string;
+  /** Visa, residency or right-to-work wording. */
+  workAuth: string;
+  /** Notice period or start date. */
+  availability: string;
+  dateOfBirth: string;
+  maritalStatus: string;
 }
 
 export interface ExperienceItem {
@@ -57,6 +69,9 @@ export interface CertificationItem {
 
 export type ColorMode = 'color' | 'bw';
 
+/** Hiring region: drives length norms and the regional fit notes in Screening. */
+export type RegionId = 'emea' | 'us' | 'gcc' | 'apac' | 'latam' | 'anz';
+
 export interface Settings {
   theme: 'dark' | 'light';
   /** Resume colour: coloured accents, or strictly black text on white. Applies to preview and exports. */
@@ -69,6 +84,8 @@ export interface Settings {
   target: string;
   /** Comma-separated advert keywords for the rubric check. */
   keywords: string;
+  /** Market the application targets: EMEA, US, GCC, APAC, LATAM or ANZ. */
+  region: RegionId;
   sections: {
     experience: boolean;
     education: boolean;
