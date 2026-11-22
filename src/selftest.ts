@@ -21,7 +21,8 @@ import { buildPdf } from './pdf';
 import { buildPngPages } from './png';
 import { evaluateResume } from './screening';
 import { createZip } from './zip';
-import type { Profile, RegionId, ResumeState } from './types';
+import { hasDetail, isNationalityWord, type DetailKind } from './context';
+import type { Profile, RegionContent, RegionId, ResumeState } from './types';
 import { APP_VERSION } from './version';
 
 const REGIONS: RegionId[] = ['emea', 'us', 'gcc', 'apac', 'latam', 'anz'];
@@ -148,9 +149,175 @@ function sampleState(profileData: Profile, region: RegionId): ResumeState {
       target: 'Senior test engineer',
       keywords: 'ISO 26262, HIL, test management, automotive',
       region,
+      syncRegions: true,
       sections: { experience: true, education: true, certifications: true, projects: true, skills: false }
-    }
+    },
+    regions: {}
   };
+}
+
+/* -------------------------------------------------------------------- */
+/* one text per market                                                  */
+/* -------------------------------------------------------------------- */
+
+const TINY_PNG_FULL = TINY_PNG + 'Zm9v';
+
+function liveContent(state: ResumeState): RegionContent {
+  return {
+    profile: state.profile,
+    experience: state.experience,
+    education: state.education,
+    certifications: state.certifications,
+    projects: state.projects,
+    skills: state.skills
+  };
+}
+
+function cloneContent(content: RegionContent): RegionContent {
+  return JSON.parse(JSON.stringify(content)) as RegionContent;
+}
+
+/**
+ * Sync off, the way a real resume reaches that state: the market on screen (US) holds
+ * its own text, three other markets hold text of their own that differs from it, and the
+ * portrait sits in both of its copies — the downscaled one and the upload kept whole.
+ */
+function regionalState(): ResumeState {
+  const base = sampleState(regionProfile(profile('Ada Lovelace'), 'gcc', true), 'gcc');
+  const state: ResumeState = {
+    ...base,
+    settings: { ...base.settings, region: 'us', syncRegions: false },
+    regions: {}
+  };
+
+  state.profile = { ...state.profile, photo: TINY_PNG, photoFull: TINY_PNG_FULL };
+
+  const live = liveContent(state);
+  state.regions.us = cloneContent(live);
+
+  (['gcc', 'apac', 'emea'] as RegionId[]).forEach((region, index) => {
+    const copy = cloneContent(live);
+    copy.profile.summary = `${region.toUpperCase()} wording ${index + 1}: ${copy.profile.summary}`;
+    copy.profile.headline = `${region.toUpperCase()} headline ${index + 1}`;
+    copy.experience[0].highlights = `${copy.experience[0].highlights}\n${region.toUpperCase()} only bullet ${index + 1}.`;
+    copy.skills[0].items = `${copy.skills[0].items}, ${region.toUpperCase()}`;
+    state.regions[region] = copy;
+  });
+
+  return state;
+}
+
+/** Every market's text, and both copies of the portrait, compared field by field. */
+function regionalDiff(expected: ResumeState, actual: ResumeState): string[] {
+  const problems = diff(flatten(expected), flatten(actual));
+
+  REGIONS.forEach((region) => {
+    const before = expected.regions[region];
+    if (!before) return;
+    const after = actual.regions ? actual.regions[region] : undefined;
+    if (!after) {
+      problems.push('regions.' + region + ' (missing)');
+      return;
+    }
+    diff(before, after, 'regions.' + region, problems);
+  });
+
+  diff(expected.profile.photo, actual.profile.photo, 'profile.photo', problems);
+  diff(expected.profile.photoFull, actual.profile.photoFull, 'profile.photoFull', problems);
+
+  /* The three texts must actually differ, or the round trip proves nothing. */
+  const distinct = new Set(Object.keys(expected.regions).map((id) => JSON.stringify(expected.regions[id as RegionId])));
+  if (distinct.size < 2) problems.push('the test state has no divergent market texts');
+
+  return problems;
+}
+
+/** The app's full backup envelope, so the test imports the file users actually make. */
+function fullBackupJson(state: ResumeState): string {
+  return JSON.stringify(
+    {
+      app: 'gmo-resume-manager',
+      kind: 'full-backup',
+      schema: 2,
+      version: APP_VERSION,
+      exportedAt: new Date().toISOString(),
+      photo: {
+        included: Boolean(state.profile.photoFull || state.profile.photo),
+        quality: state.profile.photoFull ? 'original' : 'none',
+        approxKb: 0
+      },
+      data: JSON.parse(JSON.stringify(state))
+    },
+    null,
+    2
+  );
+}
+
+/* -------------------------------------------------------------------- */
+/* the nationality lexicon                                              */
+/* -------------------------------------------------------------------- */
+
+interface LexiconCase {
+  kind: DetailKind;
+  text: string;
+  match: boolean;
+}
+
+/**
+ * Sentences the context reader must read as they are written, and the traps the wider
+ * lexicon opens: a nationality word that names a piece of plumbing, a disease or a
+ * compliance barrier is not a passport.
+ */
+const LEXICON_CASES: LexiconCase[] = [
+  { kind: 'nationality', text: 'Nationality: Lebanese', match: true },
+  { kind: 'nationality', text: 'Lebanese', match: true },
+  { kind: 'nationality', text: 'Chinese', match: true },
+  { kind: 'nationality', text: 'Brasilian', match: true },
+  { kind: 'nationality', text: 'citizen of Lebanon', match: true },
+  { kind: 'nationality', text: 'nationality: Germany', match: true },
+  { kind: 'nationality', text: 'Puerto Rican passport holder', match: true },
+  { kind: 'nationality', text: 'Bermudian · Dubai, UAE', match: true },
+  { kind: 'nationality', text: 'Đà Nẵng, citizen of Vietnam', match: true },
+  { kind: 'nationality', text: 'Open to relocation to Dubai', match: false },
+  { kind: 'nationality', text: 'Citizen developer and API integrator', match: false },
+  { kind: 'nationality', text: 'Single-page application delivery', match: false },
+  { kind: 'nationality', text: 'Chinese wall controls in the trading system', match: false },
+  { kind: 'nationality', text: 'French drain survey and German measles outbreak', match: false },
+  { kind: 'nationality', text: 'Worked with French and German teams', match: false },
+  { kind: 'nationality', text: 'Indian summer of 2024', match: false },
+  { kind: 'workAuth', text: 'Requires sponsorship', match: true },
+  { kind: 'workAuth', text: 'Valid residency visa, transferable', match: true },
+  { kind: 'marital', text: 'Single', match: true },
+  { kind: 'birth', text: 'Date of birth: 14 March 1992', match: true }
+];
+
+/** The lexicon table: every case, plus the single-word lookup the builder fields use. */
+function lexiconProblems(): Array<{ label: string; problems: string[] }> {
+  const out: Array<{ label: string; problems: string[] }> = [];
+
+  LEXICON_CASES.forEach((entry) => {
+    const found = hasDetail(entry.text, entry.kind);
+    if (found === entry.match) return;
+    out.push({
+      label: entry.kind + ' · “' + entry.text + '”',
+      problems: [found ? 'read a detail that is not stated' : 'missed a stated ' + entry.kind]
+    });
+  });
+
+  const words: Array<[string, boolean]> = [
+    ['Lebanese', true],
+    ['brasilian', true],
+    ['Germany', true],
+    ['Puerto Rican', true],
+    ['Curaçaoan', true],
+    ['not-a-nationality', false]
+  ];
+  words.forEach(([word, expected]) => {
+    if (isNationalityWord(word) === expected) return;
+    out.push({ label: 'word · ' + word, problems: ['isNationalityWord returned the wrong answer'] });
+  });
+
+  return out;
 }
 
 /** Compare two states field by field; returns a list of differences. */
@@ -373,6 +540,10 @@ export interface TestReport {
   invariantsPassed: number;
   invariantsTotal: number;
   invariantFailures: RoundTripResult[];
+  /** The nationality lexicon cases: sentences read, and sentences that must not be. */
+  lexiconPassed: number;
+  lexiconTotal: number;
+  lexiconFailures: RoundTripResult[];
 }
 
 export async function runRoundTrip(): Promise<TestReport> {
@@ -444,11 +615,39 @@ export async function runRoundTrip(): Promise<TestReport> {
     }
   }
 
+  /* --- 3: three markets with their own text, a portrait, and every export --- */
+  const regional = regionalState();
+  variants += 1;
+  recordInvariants('invariants · per-region texts', regional);
+
+  const regionExports = [
+    { name: 'JSON', text: toJson(regional), file: 'per-region.json' },
+    { name: 'Markdown', text: toMarkdown(regional), file: 'per-region.md' },
+    { name: 'TXT', text: toPlainText(regional), file: 'per-region.txt' },
+    { name: 'full backup', text: fullBackupJson(regional), file: 'per-region-full-backup.json' }
+  ];
+
+  for (const writer of regionExports) {
+    try {
+      const bytes = new TextEncoder().encode(writer.text);
+      const imported = await parseImportBytes(writer.file, bytes);
+      record('per-region · ' + writer.name, regionalDiff(regional, imported.state as ResumeState));
+    } catch (error) {
+      const message = error && (error as Error).message ? (error as Error).message : String(error);
+      record('per-region · ' + writer.name, [message]);
+    }
+  }
+
+  /* --- 4: the nationality lexicon --- */
+  const lexiconFailures = lexiconProblems().map((item) => ({ label: item.label, ok: false, problems: item.problems }));
+  const lexiconTotal = LEXICON_CASES.length + 6;
+  const lexiconPassed = lexiconTotal - lexiconFailures.length;
+
   const failures = results.filter((item) => !item.ok);
   const passed = results.length - failures.length;
 
   return {
-    ok: failures.length === 0 && invariantFailures.length === 0,
+    ok: failures.length === 0 && invariantFailures.length === 0 && lexiconFailures.length === 0,
     passed,
     total: results.length,
     results,
@@ -456,7 +655,10 @@ export async function runRoundTrip(): Promise<TestReport> {
     variants,
     invariantsPassed,
     invariantsTotal,
-    invariantFailures
+    invariantFailures,
+    lexiconPassed,
+    lexiconTotal,
+    lexiconFailures
   };
 }
 
@@ -466,13 +668,16 @@ export function formatReport(report: TestReport): string {
   );
 
   const invariantLines = report.invariantFailures.map((item) => '✗ ' + item.label + ' — ' + item.problems.join(' · '));
+  const lexiconLines = report.lexiconFailures.map((item) => '✗ ' + item.label + ' — ' + item.problems.join(' · '));
 
   return [
     `${report.ok ? 'ALL PASS' : 'FAILURES'} — ${report.passed}/${report.total} round trips exact across ${report.variants} variants`,
     `invariants — ${report.invariantsPassed}/${report.invariantsTotal} screening reports sane`,
+    `lexicon — ${report.lexiconPassed}/${report.lexiconTotal} readings correct`,
     '',
     ...lines,
-    ...(invariantLines.length ? ['', 'invariant failures', ...invariantLines] : [])
+    ...(invariantLines.length ? ['', 'invariant failures', ...invariantLines] : []),
+    ...(lexiconLines.length ? ['', 'lexicon failures', ...lexiconLines] : [])
   ].join('\n');
 }
 

@@ -78,9 +78,20 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 - **Full backup with photo** — one .json with every field, every setting and the profile portrait at full
   quality: the small display copy for the paper, plus the upload kept whole. Import it on another device
   and the resume returns as it was, picture included. Markdown and TXT exports carry the same snapshot.
+- **Sync across regions** — a switch in the Hiring region block in Screening and in the region menu of the
+  preview header, so it is in reach while filling Profile. On, every edit reaches all six markets at once.
+  Off, each market keeps its own text: the one you leave is saved, the one you open is loaded, and a
+  standing warning names any market whose text differs from the one on screen, with a button to copy the
+  current text across. Turning sync back on keeps the other markets' texts instead of deleting them, says it
+  keeps them, and brings them back when sync goes off again; discarding them is a separate button. The
+  region menu shows a dot per market — editing here, its own text, the same text, or not started — and the
+  region button in the header carries a count of the markets holding text of their own. Per-region texts
+  travel inside every export and the full backup.
 - **Context-aware checks** — free text is read for what it states, not for words that appear in it:
   "open to relocation" is not a nationality, "citizen developer" is not a passport, "single-page
-  application" is not a marital status. Findings quote the phrase that triggered them, and the structured
+  application" is not a marital status, "Chinese wall" is not a Chinese passport. The nationality list runs
+  worldwide — territories and diaspora groups included — and reads country names too, so "nationality:
+  Germany" and "citizen of Lebanon" count. Findings quote the phrase that triggered them, and the structured
   region fields always take priority over anything read from the summary.
 - **Timeline and study years** — a gap between roles that falls inside a degree, a language course
   or a preparation year counts as covered time, and a bare year as an end date reads as December.

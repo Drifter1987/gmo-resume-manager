@@ -86,6 +86,8 @@ export interface Settings {
   keywords: string;
   /** Market the application targets: EMEA, US, GCC, APAC, LATAM or ANZ. */
   region: RegionId;
+  /** On: one text for every market. Off: each market keeps its own text. */
+  syncRegions: boolean;
   sections: {
     experience: boolean;
     education: boolean;
@@ -103,4 +105,20 @@ export interface ResumeState {
   projects: ProjectItem[];
   skills: SkillGroup[];
   settings: Settings;
+  /**
+   * The text each market keeps while "Sync all regions" is off. The selected market's
+   * document lives at the top level as usual; this holds the others. Empty while sync
+   * is on, because then there is only one text for every market.
+   */
+  regions: Partial<Record<RegionId, RegionContent>>;
+}
+
+/** The part of the resume that can differ per market: content, never appearance or settings. */
+export interface RegionContent {
+  profile: Profile;
+  experience: ExperienceItem[];
+  education: EducationItem[];
+  certifications: CertificationItem[];
+  projects: ProjectItem[];
+  skills: SkillGroup[];
 }

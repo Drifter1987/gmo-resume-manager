@@ -9,6 +9,35 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.14.1',
+    name: 'The switch where the work happens, and a badge that outlives a bad sync',
+    summary: 'The region switch reaches the preview header, no market’s text is thrown away by turning sync on, and the nationality list covers territories, diaspora groups and the traps around them.',
+    notes: [
+      'The region menu in the preview header now carries the Sync all regions switch, so it is in reach while you fill in Profile, not only in Screening.',
+      'Every market in that menu shows what it holds: a gold dot for the market you are editing, a green dot for one with its own text, a hollow dot for text identical to this one, a dashed dot for one never opened.',
+      'Turning sync on no longer deletes the other markets’ texts. They stay stored, the switch and the menu both say so, and switching sync off again brings them back. Discarding them is now an explicit action with its own button and a confirmation.',
+      'The region button in the header carries a count of the markets holding text of their own, and the Regional fit card names those markets in amber with the copy-across button beside the finding.',
+      'A required field that has gone missing from another market’s text is now a warning of its own: a US copy without nationality or availability is a lapsed version of a GCC CV, not a preference for less detail.',
+      'The nationality lexicon grew to territories and diaspora groups (Puerto Rican, Bermudian, Faroese, Greenlandic, Manx, Aruban, Curaçaoan, Réunionese, New Caledonian, Tahitian, Kashmiri, Tibetan, Assyrian, Amazigh, Roma, Sámi, Ålander) and to country names, so “nationality: Germany” and “citizen of Lebanon” are read as stated. Matching is case-insensitive throughout.',
+      'The false-friend list grew to match: “Chinese wall”, “French drain”, “German measles”, “Dutch auction”, “Indian summer” and their neighbours are no longer read as a nationality.',
+      'The Nationality field now says so when the checking cannot read what you typed, and points at the country or demonym form it does read.',
+      'Verify export / import now runs a per-market round trip — three markets with their own text and a portrait through JSON, Markdown, TXT and the full backup, every market’s fields compared — and a nationality table of sentences that must and must not read as one.'
+    ]
+  },
+  {
+    version: '2.14.0',
+    name: 'One text or six: the region sync switch',
+    summary: 'A sync toggle decides whether what you type reaches every market or only the one on screen, and the nationality check now recognises nationalities worldwide.',
+    notes: [
+      'New Sync all regions switch in the Hiring region block. On — the default — every edit applies to all six markets at once: delete a sentence and it is gone everywhere.',
+      'Off — each market keeps its own text. The market you leave is saved first, the one you open is loaded, and a market visited for the first time starts from what was on screen and stays separate from then on.',
+      'A standing warning names any market whose text has fallen behind, with a Copy this text to every region button beside it, so a stale copy is never silent.',
+      'The Regional fit card says when per-region editing is on, because the score, the exports and the guide always follow the market on screen.',
+      'Per-region texts travel inside the resume: JSON, Markdown, TXT and the full backup carry all six, so a restore on another device keeps them.',
+      'The nationality check now carries a worldwide list of nationality words and nouns, so "chinese", "lebanese" or "brasilian" in any casing is read as a nationality, while "Chinese national holiday" is not.'
+    ]
+  },
+  {
     version: '2.13.0',
     name: 'A backup that keeps the photo, and checks that read the sentence',
     summary: 'A full backup restores the resume on another device with the portrait at full quality, and every free-text check now reads what the CV actually states instead of matching words.',

@@ -1,6 +1,6 @@
-import type { RegionId, ResumeState } from './types';
+import type { RegionContent, RegionId, ResumeState } from './types';
 import { splitLines, splitList } from './util';
-import { visibleValue } from './fields';
+import { regionFields, visibleValue } from './fields';
 import { statedDetails, hasDetail } from './context';
 
 export type CheckStatus = 'pass' | 'warn' | 'fail' | 'info';
@@ -10,6 +10,8 @@ export interface Finding {
   text: string;
   /** Anchor inside the resume preview (a data-r-anchor value): tapping the finding scrolls there and flashes it. */
   target?: string;
+  /** A button offered beside the finding, run by the app's own action handler. */
+  action?: { label: string; id: string };
 }
 
 export interface CheckResult {
@@ -520,6 +522,84 @@ const REGION_CHECKLISTS: Record<RegionId, { checklist: string[]; dateNote: strin
     dateNote: 'Month and year, achievement-led bullets.'
   }
 };
+
+/* -------------------------------------------------------------------- */
+/* per-market texts: which markets hold their own, and which fell behind */
+/* -------------------------------------------------------------------- */
+
+const REGION_IDS: RegionId[] = ['emea', 'us', 'gcc', 'apac', 'latam', 'anz'];
+
+/** The part of a live state that can differ per market — content, never settings. */
+export function regionContentOf(state: ResumeState): RegionContent {
+  return {
+    profile: state.profile,
+    experience: state.experience,
+    education: state.education,
+    certifications: state.certifications,
+    projects: state.projects,
+    skills: state.skills
+  };
+}
+
+/**
+ * One string per market's text, equal for two markets holding the same wording. The two
+ * photo copies are compared by size rather than by content, so a full-size portrait is
+ * not serialised six times on every keystroke.
+ */
+export function contentSignature(content: RegionContent): string {
+  const profile: Record<string, string> = {};
+  const source = (content && content.profile ? content.profile : {}) as unknown as Record<string, string>;
+  Object.keys(source).forEach((key) => {
+    const value = String(source[key] || '');
+    profile[key] = key === 'photo' || key === 'photoFull' ? '#' + value.length : value;
+  });
+  return JSON.stringify({
+    profile,
+    experience: (content && content.experience) || [],
+    education: (content && content.education) || [],
+    certifications: (content && content.certifications) || [],
+    projects: (content && content.projects) || [],
+    skills: (content && content.skills) || []
+  });
+}
+
+/**
+ * The markets holding text that differs from the one on screen, while per-region
+ * editing is on. The app badges the region button with this list and the Regional fit
+ * card names it, so a market whose text fell behind is never silent.
+ */
+export function staleRegions(state: ResumeState): RegionId[] {
+  if (state.settings.syncRegions || !state.regions) return [];
+  const active = state.settings.region;
+  const current = contentSignature(regionContentOf(state));
+  return REGION_IDS.filter((id) => {
+    if (id === active) return false;
+    const copy = state.regions ? state.regions[id] : undefined;
+    return Boolean(copy) && contentSignature(copy as RegionContent) !== current;
+  });
+}
+
+/**
+ * A market that requires a field is not served by another market's text: a US copy has
+ * no nationality by design, so copying it over the Gulf loses what the Gulf screens for
+ * before a first call. That is a lapsed version, not a preference.
+ */
+function lapsedRequiredFields(state: ResumeState): Array<{ region: RegionId; fields: string[] }> {
+  const active = state.settings.region;
+  const out: Array<{ region: RegionId; fields: string[] }> = [];
+  REGION_IDS.forEach((id) => {
+    if (id === active) return;
+    const copy = state.regions ? state.regions[id] : undefined;
+    if (!copy) return;
+    const content = copy as RegionContent;
+    const profile = (content && content.profile ? content.profile : {}) as unknown as Record<string, string>;
+    const missing = regionFields(id)
+      .filter((spec) => spec.required)
+      .filter((spec) => !String(profile[spec.key] || '').trim());
+    if (missing.length) out.push({ region: id, fields: missing.map((spec) => spec.label.toLowerCase()) });
+  });
+  return out;
+}
 
 export interface RegionalAssessment {
   score: number;
@@ -1108,6 +1188,41 @@ function regionalAssessment(state: ResumeState, region: RegionProfile, pages: nu
   }
 
   findings.push({ status: 'info', text: `What this market checks: ${rules.checklist.join('; ')}.` });
+
+  /* Sync off means this market keeps its own text; the score and the exports follow the
+     market on screen, and another market may still hold wording the user has not updated. */
+  if (!state.settings.syncRegions) {
+    const behind = staleRegions(state);
+    if (behind.length) {
+      const names = behind.map((id) => REGION_PROFILES[id].label).join(', ');
+      findings.push({
+        status: 'warn',
+        text: `${names} ${behind.length === 1 ? 'holds its' : 'hold their'} own text, which differs from the one on screen. Copy this market's text across in one tap, or switch to ${behind.length === 1 ? 'that market' : 'each of them'} and bring it up to date there.`,
+        action: { label: 'Copy this text across', id: 'sync-copy-all' }
+      });
+    } else {
+      findings.push({
+        status: 'info',
+        text: 'Editing per region is on: this card, the score and every export follow the selected market’s own text.'
+      });
+    }
+
+    const lapsed = lapsedRequiredFields(state);
+    if (lapsed.length) {
+      findings.push({
+        status: 'warn',
+        text:
+          lapsed
+            .map(
+              (item) =>
+                `${REGION_PROFILES[item.region].label} needs ${item.fields.join(', ')}, and its text no longer has ${
+                  item.fields.length === 1 ? 'it' : 'them'
+                }`
+            )
+            .join('; ') + ': that copy is a lapsed version, not a preference for less detail.'
+      });
+    }
+  }
 
   return { score: clamp(Math.round(score)), findings };
 }

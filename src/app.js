@@ -20,10 +20,13 @@ import {
   REGION_SCORE_WEIGHTS,
   CHECK_LABELS,
   METHOD_SOURCES,
-  STANDARDS_CAVEAT
+  STANDARDS_CAVEAT,
+  staleRegions,
+  contentSignature
 } from './screening';
 import { complianceIssues } from './compliance';
 import { regionFields, missingRequiredFields, logisticsLine, visiblePhoto } from './fields';
+import { readsAsNationality } from './context';
 
 const STORAGE_KEY = 'gmoResumeManager.v2';
 const LEGACY_STORAGE_KEY = 'resumeStudio.v1';
@@ -168,6 +171,7 @@ function defaultSettings() {
     target: '',
     keywords: '',
     region: 'emea',
+    syncRegions: true,
     sections: { experience: true, education: true, certifications: true, projects: true, skills: true }
   };
 }
@@ -196,7 +200,8 @@ function emptyState() {
     certifications: [],
     projects: [],
     skills: [],
-    settings: defaultSettings()
+    settings: defaultSettings(),
+    regions: {}
   };
 }
 
@@ -319,10 +324,61 @@ function loadState() {
   }
 }
 
-function normalize(data) {
-  const base = emptyState();
-  const source = data && typeof data === 'object' ? data : {};
-  const incoming = source.profile && typeof source.profile === 'object' ? source.profile : {};
+/** The part of a resume that can differ per market: content only, never appearance. */
+function captureContent(source) {
+  return JSON.parse(
+    JSON.stringify({
+      profile: source.profile,
+      experience: source.experience,
+      education: source.education,
+      certifications: source.certifications,
+      projects: source.projects,
+      skills: source.skills
+    })
+  );
+}
+
+/** Copies one market's saved text onto the live document. */
+function adoptContent(target, content) {
+  if (!content || typeof content !== 'object') return;
+  const copy = JSON.parse(JSON.stringify(content));
+  target.profile = copy.profile;
+  target.experience = copy.experience;
+  target.education = copy.education;
+  target.certifications = copy.certifications;
+  target.projects = copy.projects;
+  target.skills = copy.skills;
+}
+
+/**
+ * The markets whose text differs from the one on screen, while sync is off. The check
+ * itself lives in screening.ts, so the Regional fit card and this header badge always
+ * name the same markets.
+ */
+function divergentRegions() {
+  return staleRegions(state);
+}
+
+/** The markets holding their own text, other than the one on screen. */
+function storedRegions() {
+  return REGION_IDS.filter((id) => id !== currentRegion() && Boolean(state.regions && state.regions[id]));
+}
+
+/**
+ * What one market holds right now, for the dot beside it in the region menu:
+ * 'here' (the market on screen), 'own' (its own text), 'same' (a copy identical to this
+ * one) and 'none' (never opened, so it would start from the text on screen).
+ */
+function regionSyncState(id, liveSignature) {
+  if (id === currentRegion()) return 'here';
+  const copy = state.regions && state.regions[id];
+  if (!copy) return 'none';
+  const live = liveSignature || contentSignature(captureContent(state));
+  return contentSignature(copy) === live ? 'same' : 'own';
+}
+
+function applyContent(base, source) {
+  const incoming = source && source.profile && typeof source.profile === 'object' ? source.profile : {};
 
   Object.keys(base.profile).forEach((key) => {
     const value = incoming[key];
@@ -353,6 +409,27 @@ function normalize(data) {
         return merged;
       });
   });
+}
+
+function normalizeContent(source) {
+  const base = emptyState();
+  applyContent(base, source && typeof source === 'object' ? source : {});
+  return captureContent(base);
+}
+
+function normalize(data) {
+  const base = emptyState();
+  const source = data && typeof data === 'object' ? data : {};
+  applyContent(base, source);
+
+  /* A resume saved while "Sync all regions" was off carries one text per market. */
+  if (source.regions && typeof source.regions === 'object') {
+    REGION_IDS.forEach((id) => {
+      const copy = source.regions[id];
+      if (!copy || typeof copy !== 'object') return;
+      base.regions[id] = normalizeContent(copy);
+    });
+  }
 
   base.settings = normalizeSettings(source.settings);
   repairImportedContent(base);
@@ -490,6 +567,7 @@ function normalizeSettings(raw) {
   if (typeof raw.target === 'string') out.target = raw.target;
   if (typeof raw.keywords === 'string') out.keywords = raw.keywords;
   if (typeof raw.region === 'string' && REGION_IDS.indexOf(raw.region) !== -1) out.region = raw.region;
+  if (typeof raw.syncRegions === 'boolean') out.syncRegions = raw.syncRegions;
 
   if (raw.sections && typeof raw.sections === 'object') {
     ['experience', 'education', 'certifications', 'projects', 'skills'].forEach((key) => {
@@ -758,10 +836,17 @@ function regionPhotoControl(spec) {
 
 function regionTextField(spec) {
   const value = state.profile[spec.key] || '';
+  const unrecognised = spec.key === 'nationality' && value.trim() && !readsAsNationality(value);
   return `<label class="field${spec.required ? ' is-required' : ''}">
     <span class="field-label">${esc(spec.label)}${requiredTag(spec)}</span>
     <input type="text" data-path="profile.${spec.key}" value="${esc(value)}" placeholder="${esc(spec.placeholder)}" />
     <span class="field-hint">${esc(spec.hint)}</span>
+    ${
+      unrecognised
+        ? `<span class="field-hint field-warn">The check does not read this as a nationality. Write it as a country
+      or a demonym — Lebanese, Germany — or as “citizen of Lebanon” — so it is not missed.</span>`
+        : ''
+    }
   </label>`;
 }
 
@@ -1396,8 +1481,10 @@ function settingsEditor() {
         <button class="btn" type="button" data-action="verify">Verify export / import</button>
         <pre class="verify-report" id="verify-report" hidden></pre>
         <span class="setting-note">Runs the whole test suite: every export built and imported back field by
-        field, once per market with that market's profile fields, plus eight seeded random resumes checked
-        for fidelity and for a sane screening report. A few seconds. Nothing is downloaded or overwritten.</span>
+        field, once per market with that market's profile fields, three markets holding their own text and a
+        portrait through JSON, Markdown, TXT and the full backup, eight seeded random resumes checked for
+        fidelity and for a sane screening report, and a table of nationality sentences that must and must not
+        be read as one. A few seconds. Nothing is downloaded or overwritten.</span>
       </div>
       <div class="paste-row">
         <label class="field-label" for="paste-json">Paste a resume JSON</label>
@@ -1610,7 +1697,19 @@ function screeningHub() {
         ).join('')}
       </div>
       <p class="setting-note">Page norms, personal details, language levels and references follow this market:
-      it sets the page ceiling and scores the Regional fit card. The AI prompt below is written for it too.</p>
+      it sets the page ceiling and scores the Regional fit card. The AI prompt below is written for it too. The
+      same switch sits in the region menu of the preview header, so it is in reach while you fill in Profile.</p>
+      <div class="sync-row">
+        <label class="switch-toggle" title="One text for every region, or one per region">
+          <input type="checkbox" data-sync-regions ${state.settings.syncRegions ? 'checked' : ''} />
+          <span class="switch-track" aria-hidden="true"></span>
+          <span class="switch-text">Sync all regions</span>
+        </label>
+        <span class="sync-state">${
+          state.settings.syncRegions ? 'One text for every region' : 'Each region keeps its own text'
+        }</span>
+      </div>
+      ${syncNoticeHtml()}
       <button class="btn btn-sm guide-open-btn" type="button" data-action="region-guide">
         How each region is scored
       </button>
@@ -1659,13 +1758,19 @@ function screenCard(check, report) {
       ${
         check.findings.length
           ? `<ul class="screen-findings">${check.findings
-              .map((finding) =>
-                finding.target
-                  ? `<li class="is-${finding.status}"><button class="screen-jump" type="button" data-jump="${esc(
-                      finding.target
-                    )}" title="Show this in the resume preview">${esc(finding.text)}</button></li>`
-                  : `<li class="is-${finding.status}">${esc(finding.text)}</li>`
-              )
+              .map((finding) => {
+                const action = finding.action
+                  ? `<button class="btn btn-sm screen-act" type="button" data-action="${esc(
+                      finding.action.id
+                    )}">${esc(finding.action.label)}</button>`
+                  : '';
+                if (finding.target) {
+                  return `<li class="is-${finding.status}"><button class="screen-jump" type="button" data-jump="${esc(
+                    finding.target
+                  )}" title="Show this in the resume preview">${esc(finding.text)}</button>${action}</li>`;
+                }
+                return `<li class="is-${finding.status}"><span>${esc(finding.text)}</span>${action}</li>`;
+              })
               .join('')}</ul>`
           : ''
       }
@@ -2120,23 +2225,86 @@ function renderRegionPicker() {
 
   const active = currentRegion();
   label.textContent = REGION_LABELS[active];
-  menu.innerHTML = REGION_IDS.map(
-    (id) => `<button class="region-option${id === active ? ' is-on' : ''}" type="button" role="option"
-      aria-selected="${id === active}" data-region="${id}">
-      <span class="region-option-name">${esc(REGION_LABELS[id])}</span>
+
+  const dots = {
+    here: 'editing here',
+    own: 'own text',
+    same: 'same as here',
+    none: 'not started'
+  };
+
+  const liveSignature = contentSignature(captureContent(state));
+  const options = REGION_IDS.map((id) => {
+    const state_ = regionSyncState(id, liveSignature);
+    return `<button class="region-option${id === active ? ' is-on' : ''}" type="button"
+      aria-pressed="${id === active}" data-region="${id}" title="${esc(REGION_LABELS[id] + ' — ' + dots[state_])}">
+      <span class="region-option-row">
+        <span class="region-option-name">${esc(REGION_LABELS[id])}</span>
+        <span class="region-dot is-${state_}" aria-hidden="true"></span>
+        <span class="region-option-tag">${esc(dots[state_])}</span>
+      </span>
       <span class="region-option-note">${esc(REGION_HINTS[id])}</span>
-    </button>`
-  ).join('');
+    </button>`;
+  }).join('');
+
+  const others = storedRegions();
+  const footState = state.settings.syncRegions
+    ? others.length
+      ? `One text for every region. The separate ${others.length === 1 ? 'text' : 'texts'} kept for ${others
+          .map((id) => REGION_LABELS[id])
+          .join(', ')} ${others.length === 1 ? 'comes' : 'come'} back when sync is switched off.`
+      : 'One text for every region.'
+    : 'Each region keeps its own text. Opening a region loads its text; leaving one saves it.';
+
+  const foot = `<div class="region-menu-foot">
+    <label class="switch-toggle region-menu-switch" title="One text for every region, or one per region">
+      <input type="checkbox" data-sync-regions ${state.settings.syncRegions ? 'checked' : ''} />
+      <span class="switch-track" aria-hidden="true"></span>
+      <span class="switch-text">Sync all regions</span>
+    </label>
+    <p class="region-menu-state">${esc(footState)}</p>
+    ${
+      others.length
+        ? `<button class="btn btn-sm region-discard" type="button" data-action="sync-discard">Discard other regions’ texts</button>`
+        : ''
+    }
+  </div>`;
+
+  menu.innerHTML = options + foot;
+  updateRegionBadge();
+}
+
+/**
+ * The badge on the region button: how many markets still hold older text while
+ * per-region editing is on. It is the same list the Regional fit card names, from the
+ * same function, so the two can never disagree.
+ */
+function updateRegionBadge() {
+  const badge = document.getElementById('region-badge');
+  const btn = document.getElementById('region-btn');
+  if (!badge || !btn) return;
+
+  const stale = divergentRegions();
+  badge.textContent = String(stale.length);
+  badge.hidden = !stale.length;
+
+  const names = stale.map((id) => REGION_LABELS[id]).join(', ');
+  btn.title = stale.length
+    ? 'Hiring region: ' + names + (stale.length === 1 ? ' has its own' : ' have their own') + ' text, which differs from this one — open this menu to review it'
+    : 'Hiring region: sets the screening rules and the AI prompt';
+  btn.classList.toggle('has-stale', stale.length > 0);
 }
 
 function setRegionMenuOpen(open) {
   const btn = document.getElementById('region-btn');
   const menu = document.getElementById('region-menu');
   if (!btn || !menu) return;
+  // Opening it re-reads the dots, so what the menu says about each market is current.
+  if (open) renderRegionPicker();
   menu.hidden = !open;
   btn.setAttribute('aria-expanded', String(open));
   if (open) {
-    const option = menu.querySelector('[aria-selected="true"]') || menu.querySelector('button');
+    const option = menu.querySelector('[aria-pressed="true"]') || menu.querySelector('button');
     if (option) option.focus({ preventScroll: true });
   }
 }
@@ -2153,13 +2321,17 @@ let guideOpener = null;
  *  - fit: the Regional fit check alone, scored against that market's criteria;
  *  - overall: the average of every scored check in that market, which is the number
  *    the Screening tab shows at the top.
+ *
+ * With sync off, each market is scored on the text it actually holds, not on the one
+ * on screen: otherwise the guide would quote a score for wording that market never had.
  */
 function regionScores(id) {
   try {
-    const report = evaluateResume({
-      ...state,
-      settings: { ...state.settings, region: id }
-    });
+    let subject = { ...state, settings: { ...state.settings, region: id } };
+    const owns = !state.settings.syncRegions && id !== currentRegion() ? state.regions && state.regions[id] : null;
+    if (owns) subject = { ...subject, ...owns };
+
+    const report = evaluateResume(subject);
     const check = report.checks.find((item) => item.id === 'region');
     const scored = report.checks.filter((item) => item.id !== 'llm' && item.status !== 'info');
     return {
@@ -2509,6 +2681,7 @@ function renderPreview() {
       </div>
     `;
     applyPreviewMarks();
+    updateRegionBadge();
     return;
   }
 
@@ -2541,6 +2714,7 @@ function renderPreview() {
   `;
 
   applyPreviewMarks();
+  updateRegionBadge();
 }
 
 /* -------------------------------------------------------------------- */
@@ -2826,7 +3000,11 @@ async function runVerify() {
       report.invariantsPassed +
       '/' +
       report.invariantsTotal +
-      ' screening reports sane';
+      ' screening reports sane; ' +
+      report.lexiconPassed +
+      '/' +
+      report.lexiconTotal +
+      ' lexicon readings correct';
 
     const output = document.getElementById('verify-report');
     if (output) {
@@ -2840,7 +3018,7 @@ async function runVerify() {
       showHint('All checks passed');
     } else {
       console.error('[GMO resume verify]', formatReport(report));
-      const problems = report.failures.length + report.invariantFailures.length;
+      const problems = report.failures.length + report.invariantFailures.length + report.lexiconFailures.length;
       toast('Verify found ' + problems + ' problem(s) — the report is below the button', true);
     }
   } catch (error) {
@@ -2863,6 +3041,32 @@ function handleAction(action, button) {
 
   if (action === 'full-backup') {
     exportFullBackup();
+    return;
+  }
+
+  if (action === 'sync-copy-all') {
+    state.regions = {};
+    save();
+    renderRegionPicker();
+    renderEditor();
+    renderPreview();
+    toast('This text now applies to every region');
+    return;
+  }
+
+  if (action === 'sync-discard') {
+    const others = storedRegions();
+    if (!others.length) return;
+    const names = others.map((id) => REGION_LABELS[id] || id).join(', ');
+    if (!window.confirm('Discard the separate text kept for ' + names + '? The text on screen is kept.')) return;
+    others.forEach((id) => {
+      delete state.regions[id];
+    });
+    save();
+    renderRegionPicker();
+    renderEditor();
+    renderPreview();
+    toast('Discarded the text kept for ' + names);
     return;
   }
 
@@ -3042,6 +3246,115 @@ function handleAction(action, button) {
   renderPreview();
 }
 
+/**
+ * What the sync toggle is doing right now, in words, plus a warning for any market whose
+ * text has fallen behind. The warning stays until that market is edited or the current
+ * text is copied over it, so a stale copy is never silent.
+ */
+function syncNoticeHtml() {
+  const active = REGION_LABELS[currentRegion()];
+  const others = storedRegions();
+  const discard = others.length
+    ? `<button class="btn btn-sm sync-discard" type="button" data-action="sync-discard">Discard other regions’ texts</button>`
+    : '';
+
+  if (state.settings.syncRegions) {
+    const kept = others.length
+      ? ` The separate ${others.length === 1 ? 'text' : 'texts'} kept for ${others
+          .map((id) => esc(REGION_LABELS[id] || id))
+          .join(', ')} ${others.length === 1 ? 'is' : 'are'} still stored, and comes back when sync is switched off.`
+      : '';
+    return `<p class="setting-note sync-note">Edits apply everywhere at once: a sentence you delete here is
+    gone from every region's text.${kept}</p>${kept ? discard : ''}`;
+  }
+
+  const behind = divergentRegions();
+  const parts = [`<strong>Sync is off.</strong> You are editing the ${esc(active)} text only.`];
+  if (others.length) {
+    parts.push('Kept separately: ' + others.map((id) => esc(REGION_LABELS[id] || id)).join(', ') + '.');
+  } else {
+    parts.push('No other region has its own text yet; switching to one starts it from what is here.');
+  }
+  if (behind.length) {
+    parts.push(
+      '<span class="sync-warn">' +
+        behind.map((id) => esc(REGION_LABELS[id] || id)).join(', ') +
+        ' ' +
+        (behind.length === 1 ? 'holds its' : 'hold their') +
+        ' own text, which differs from this one — copy this text across, or open that region to edit it.</span>'
+    );
+  }
+  return `<p class="setting-note sync-note">${parts.join(' ')}</p>
+    <button class="btn btn-sm sync-copy" type="button" data-action="sync-copy-all">Copy this text to every region</button>
+    ${discard}`;
+}
+
+/**
+ * Switching sync. The texts other markets keep are never thrown away by the switch
+ * itself: turning sync on leaves them stored and says so, turning it off keeps them and
+ * the market on screen becomes its own text again. Getting the space back is a separate,
+ * explicit action.
+ */
+function setSyncRegions(on) {
+  const menu = document.getElementById('region-menu');
+  const wasOpen = Boolean(menu && !menu.hidden);
+
+  state.settings.syncRegions = Boolean(on);
+
+  if (state.settings.syncRegions) {
+    if (!state.regions) state.regions = {};
+    const kept = storedRegions().length;
+    toast(
+      kept
+        ? 'Sync on — one text for every region; the ' + kept + ' other ' + (kept === 1 ? 'text is' : 'texts are') + ' still stored'
+        : 'Sync on — one text for every region'
+    );
+  } else {
+    if (!state.regions) state.regions = {};
+    state.regions[currentRegion()] = captureContent(state);
+    toast('Sync off — each region keeps its own text from now on');
+  }
+
+  save();
+  renderRegionPicker();
+  // The menu is rebuilt in place, so it stays open and the switch keeps the focus.
+  if (wasOpen) {
+    const input = document.querySelector('#region-menu [data-sync-regions]');
+    if (input) input.focus({ preventScroll: true });
+  }
+  renderEditor();
+  renderPreview();
+}
+
+/**
+ * Switching market. With sync on there is one document, so nothing moves. With sync off
+ * the market being left is stored first, then the new market's own text is loaded; a
+ * market visited for the first time starts from what was on screen and stays separate.
+ */
+function switchRegion(next) {
+  if (REGION_IDS.indexOf(next) === -1) return;
+  const from = currentRegion();
+  if (next === from) return;
+  state.settings.region = next;
+
+  if (!state.settings.syncRegions) {
+    if (!state.regions) state.regions = {};
+    state.regions[from] = captureContent(state);
+    const stored = state.regions[next];
+    if (stored) {
+      adoptContent(state, stored);
+    } else {
+      state.regions[next] = captureContent(state);
+      toast(REGION_LABELS[next] + ' starts from the text you had; edits here stay in ' + REGION_LABELS[next]);
+    }
+  }
+
+  save();
+  renderRegionPicker();
+  renderEditor();
+  renderPreview();
+}
+
 function applySetting(key, value) {
   if (key === 'theme') state.settings.theme = value === 'light' ? 'light' : 'dark';
   else if (key === 'colorMode') state.settings.colorMode = value === 'bw' ? 'bw' : 'color';
@@ -3049,7 +3362,8 @@ function applySetting(key, value) {
   else if (key === 'density') state.settings.density = value === 'compact' ? 'compact' : 'comfortable';
   else if (key === 'region') {
     if (REGION_IDS.indexOf(value) === -1) return;
-    state.settings.region = value;
+    switchRegion(value);
+    return;
   } else return;
 
   applyAppearance();
@@ -3139,6 +3453,11 @@ function onPanelInput(event) {
   // A photo arrives as a change event only, so it is handled before the select guard.
   if (target.dataset && target.dataset.photoInput !== undefined && event.type === 'change') {
     handlePhotoInput(target);
+    return;
+  }
+
+  if (target.dataset && target.dataset.syncRegions !== undefined && event.type === 'change') {
+    setSyncRegions(target.checked);
     return;
   }
 
@@ -3314,11 +3633,23 @@ function bindEvents() {
   const regionMenu = document.getElementById('region-menu');
   if (regionMenu) {
     regionMenu.addEventListener('click', (event) => {
+      const actionButton = event.target.closest('[data-action]');
+      if (actionButton) {
+        event.stopPropagation();
+        handleAction(actionButton.dataset.action, actionButton);
+        return;
+      }
       const option = event.target.closest('[data-region]');
       if (!option) return;
       setRegionMenuOpen(false);
       applySetting('region', option.dataset.region);
       if (regionBtn) regionBtn.focus();
+    });
+
+    regionMenu.addEventListener('change', (event) => {
+      const input = event.target.closest('[data-sync-regions]');
+      if (!input) return;
+      setSyncRegions(input.checked);
     });
   }
 

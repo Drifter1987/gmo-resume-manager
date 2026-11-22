@@ -267,6 +267,53 @@ body {
 .region-option-name { font-size: 12.5px; font-weight: 700; color: var(--gold); }
 .region-option-note { font-size: 11px; line-height: 1.35; color: var(--muted); }
 
+.region-option-row { display: flex; align-items: center; gap: 7px; }
+.region-option-tag { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--muted); }
+
+/* the dot beside each market: here, its own text, the same text, or not started */
+.region-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+}
+.region-dot.is-here { background: var(--gold); border-color: var(--gold); }
+.region-dot.is-own { background: var(--green); border-color: var(--green); }
+.region-dot.is-same { background: transparent; border-color: var(--muted); }
+.region-dot.is-none { background: transparent; border-style: dashed; opacity: 0.75; }
+
+/* the count of markets whose text fell behind, on the region button itself */
+.region-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.region-badge[hidden] { display: none; }
+.region-btn.has-stale { border-color: var(--danger); }
+
+.region-menu-foot {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 9px 10px 6px;
+  border-top: 1px solid var(--line);
+}
+
+.region-menu-switch { font-size: 11.5px; }
+.region-menu-state { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.region-discard { justify-self: start; }
+
 :root[data-theme="light"] .region-menu { background: #ffffff; }
 
 /* the regulations switch, styled as one calm inline control */
@@ -1651,6 +1698,9 @@ label.dock-btn { cursor: pointer; user-select: none; }
 }
 .screen-jump:hover { text-decoration: underline; text-underline-offset: 3px; }
 
+/* a finding that carries its own fix, such as copying this text to every market */
+.screen-act { margin-top: 6px; }
+
 /* tapping a finding scrolls the preview to its anchor, which stays lit */
 #resume [data-r-anchor] {
   scroll-margin: 90px 0 120px;
@@ -2008,6 +2058,37 @@ label.dock-btn { cursor: pointer; user-select: none; }
 
 .guide-open-btn { margin-top: 10px; }
 
+/* ---------- sync across regions ---------- */
+
+.sync-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(6, 16, 11, 0.42);
+}
+
+:root[data-theme="light"] .sync-row { background: #f4f8f4; }
+
+.sync-state { font-size: 11.5px; color: var(--muted); }
+
+.sync-note { margin: 8px 0 0; }
+.sync-note strong { color: var(--ink); }
+
+.sync-warn {
+  display: block;
+  margin-top: 4px;
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.sync-copy { margin-top: 8px; }
+.sync-discard { margin-top: 8px; margin-left: 6px; }
+
 /* ---------- region details in the builder ---------- */
 
 .region-fields {
@@ -2052,6 +2133,7 @@ label.dock-btn { cursor: pointer; user-select: none; }
 .opt-tag { color: var(--muted); border: 1px solid var(--line-strong); }
 
 .field-hint { font-size: 11px; line-height: 1.45; color: var(--muted); }
+.field-warn { color: var(--gold); }
 
 .field.is-required .field-label { color: var(--green); }
 
