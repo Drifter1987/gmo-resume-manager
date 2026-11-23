@@ -1,6 +1,6 @@
 import type { RegionContent, RegionId, ResumeState } from './types';
 import { splitLines, splitList } from './util';
-import { regionFields, visibleValue } from './fields';
+import { missingRequiredFields, regionFields, visibleValue } from './fields';
 import { statedDetails, hasDetail } from './context';
 
 export type CheckStatus = 'pass' | 'warn' | 'fail' | 'info';
@@ -582,10 +582,12 @@ export function staleRegions(state: ResumeState): RegionId[] {
 /**
  * A market that requires a field is not served by another market's text: a US copy has
  * no nationality by design, so copying it over the Gulf loses what the Gulf screens for
- * before a first call. That is a lapsed version, not a preference.
+ * before a first call. Only fields the market on screen does not show are reported here;
+ * the ones it does show are reported under the field itself, by regionFieldNotes.
  */
 function lapsedRequiredFields(state: ResumeState): Array<{ region: RegionId; fields: string[] }> {
   const active = state.settings.region;
+  const shown = new Set(regionFields(active).map((spec) => spec.key));
   const out: Array<{ region: RegionId; fields: string[] }> = [];
   REGION_IDS.forEach((id) => {
     if (id === active) return;
@@ -594,11 +596,241 @@ function lapsedRequiredFields(state: ResumeState): Array<{ region: RegionId; fie
     const content = copy as RegionContent;
     const profile = (content && content.profile ? content.profile : {}) as unknown as Record<string, string>;
     const missing = regionFields(id)
-      .filter((spec) => spec.required)
+      .filter((spec) => spec.required && !shown.has(spec.key))
       .filter((spec) => !String(profile[spec.key] || '').trim());
     if (missing.length) out.push({ region: id, fields: missing.map((spec) => spec.label.toLowerCase()) });
   });
   return out;
+}
+
+/* -------------------------------------------------------------------- */
+/* field by field: what differs, where, and what that market says there  */
+/* -------------------------------------------------------------------- */
+
+/** Fields that state a fact about you, and should therefore read the same everywhere. */
+const FACT_FIELDS = new Set([
+  'profile.name',
+  'profile.email',
+  'profile.phone',
+  'profile.location',
+  'profile.website',
+  'profile.linkedin',
+  'experience.role',
+  'experience.company',
+  'experience.start',
+  'experience.end',
+  'education.school',
+  'education.degree',
+  'education.field',
+  'education.start',
+  'education.end',
+  'certifications.name',
+  'certifications.issuer',
+  'certifications.date',
+  'certifications.expires',
+  'certifications.link',
+  'projects.name',
+  'projects.link',
+  'skills.label'
+]);
+
+const COLLECTION_KEYS: Array<{
+  key: 'experience' | 'education' | 'certifications' | 'projects' | 'skills';
+  labelField: string;
+}> = [
+  { key: 'experience', labelField: 'role' },
+  { key: 'education', labelField: 'school' },
+  { key: 'certifications', labelField: 'name' },
+  { key: 'projects', labelField: 'name' },
+  { key: 'skills', labelField: 'label' }
+];
+
+const REGION_FIELD_LABELS: Record<string, string> = {
+  nationality: 'nationality',
+  workAuth: 'visa or residency status',
+  availability: 'availability',
+  dateOfBirth: 'date of birth',
+  maritalStatus: 'marital status',
+  photo: 'a photo'
+};
+
+export interface RegionFieldNote {
+  /** Editor path (a data-path value) of the field this note sits under. */
+  path: string;
+  tone: 'warn' | 'info';
+  text: string;
+  /** The market to offer to open, when exactly one other market differs here. */
+  region?: RegionId;
+}
+
+function shortValue(value: string): string {
+  const text = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > 48 ? text.slice(0, 47).trim() + '…' : text;
+}
+
+function joinRegionNames(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] || '';
+  if (labels.length === 2) return labels[0] + ' and ' + labels[1];
+  return labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
+}
+
+/** "experience.2.highlights" → "experience.highlights", so one rule covers every entry. */
+function plainFieldPath(path: string): string {
+  return path.replace(/\.\d+\./, '.');
+}
+
+interface FieldDifference {
+  region: RegionId;
+  /** What that market's own text says in this field. */
+  value: string;
+  /** True when the market requires this field and its text has none. */
+  required: boolean;
+  /** True when that market's text has no entry at this position at all. */
+  missingEntry: boolean;
+}
+
+/**
+ * What the builder should say under a field: a required field this market is still
+ * missing, and — while per-region editing is on — which other market's own text differs
+ * here and what it says. Every note names the field it sits under, so the answer is
+ * "this field, in this market, which says this", never a general warning that somewhere
+ * a market is out of date.
+ */
+export function regionFieldNotes(state: ResumeState): RegionFieldNote[] {
+  const notes: RegionFieldNote[] = [];
+  const active = state.settings.region;
+  const activeLabel = REGION_PROFILES[active].label;
+
+  /* The market on screen first: a required field left empty is the one thing here that
+     belongs under the field rather than in a list. */
+  missingRequiredFields(state).forEach((spec) => {
+    notes.push({
+      path: 'profile.' + spec.key,
+      tone: 'warn',
+      text: `Required in ${activeLabel}: the CV is incomplete for this market without it.`
+    });
+  });
+
+  if (state.settings.syncRegions || !state.regions) return notes;
+
+  const live = regionContentOf(state);
+  const liveProfile = live.profile as unknown as Record<string, string>;
+  const differences = new Map<string, FieldDifference[]>();
+
+  const add = (path: string, difference: FieldDifference) => {
+    const list = differences.get(path) || [];
+    list.push(difference);
+    differences.set(path, list);
+  };
+
+  REGION_IDS.forEach((id) => {
+    if (id === active) return;
+    const copy = state.regions ? state.regions[id] : undefined;
+    if (!copy) return;
+    const other = copy as RegionContent;
+    const otherProfile = (other.profile || {}) as unknown as Record<string, string>;
+    const required = new Set(
+      regionFields(id)
+        .filter((spec) => spec.required)
+        .map((spec) => spec.key as string)
+    );
+
+    Object.keys(liveProfile).forEach((key) => {
+      if (key === 'photo' || key === 'photoFull') return;
+      if (String(liveProfile[key] || '') === String(otherProfile[key] || '')) return;
+      add('profile.' + key, {
+        region: id,
+        value: String(otherProfile[key] || ''),
+        required: required.has(key),
+        missingEntry: false
+      });
+    });
+
+    /* The portrait is compared by presence, not by its data URL: the note says a photo is
+       missing or different, and never pastes an image into the builder. */
+    const minePhoto = String(liveProfile.photo || '');
+    const theirPhoto = String(otherProfile.photo || '');
+    if (Boolean(minePhoto) !== Boolean(theirPhoto) || (minePhoto && theirPhoto && minePhoto !== theirPhoto)) {
+      add('profile.photo', {
+        region: id,
+        value: theirPhoto ? (minePhoto ? 'a different photo' : 'a photo') : '',
+        required: required.has('photo'),
+        missingEntry: false
+      });
+    }
+
+    COLLECTION_KEYS.forEach(({ key, labelField }) => {
+      const mine = (live[key] || []) as unknown as Array<Record<string, unknown>>;
+      const theirs = (other[key] || []) as unknown as Array<Record<string, unknown>>;
+      mine.forEach((item, index) => {
+        const pair = theirs[index];
+        if (!pair) {
+          add(`${key}.${index}.${labelField}`, { region: id, value: '', required: false, missingEntry: true });
+          return;
+        }
+        Object.keys(item).forEach((field) => {
+          if (field === 'id' || field === 'current') return;
+          if (String(item[field] || '') === String(pair[field] || '')) return;
+          add(`${key}.${index}.${field}`, {
+            region: id,
+            value: String(pair[field] || ''),
+            required: false,
+            missingEntry: false
+          });
+        });
+      });
+    });
+  });
+
+  differences.forEach((list, path) => {
+    /* One note per field: the required-field note above already says the important part. */
+    if (notes.some((note) => note.path === path)) return;
+
+    /* A required field another market's text has lost outranks the wording differences:
+       that is the one thing there that must be put right. */
+    const needs = list.filter((item) => item.required && !item.value.trim());
+    const group = needs.length ? needs : list;
+    const names = joinRegionNames(group.map((item) => REGION_PROFILES[item.region].label));
+    const several = group.length > 1;
+    const first = group[0];
+    const fact = FACT_FIELDS.has(plainFieldPath(path));
+    const verb = several ? 'have ' : 'has ';
+    const region = several ? undefined : first.region;
+
+    /* The portrait never has its value quoted: the note says what the other market holds. */
+    if (path === 'profile.photo' && !needs.length) {
+      notes.push({
+        path,
+        tone: 'info',
+        text: names + ' ' + verb + (first.value ? 'a different photo here.' : 'no photo here.'),
+        region
+      });
+      return;
+    }
+
+    let text: string;
+    let tone: 'warn' | 'info' = fact ? 'warn' : 'info';
+
+    if (needs.length) {
+      const label = REGION_FIELD_LABELS[path.slice(path.indexOf('.') + 1)] || 'that detail';
+      tone = 'warn';
+      text = names + (several ? ' need ' : ' needs ') + label + (several ? ' and their texts have none.' : ' and its text has none.');
+    } else if (first.missingEntry) {
+      text = names + ' ' + verb + 'no entry at this position.';
+    } else if (!first.value.trim()) {
+      text = names + ' ' + verb + 'nothing in this field.';
+    } else if (fact) {
+      text = names + ' ' + verb + '“' + shortValue(first.value) + '” here — this field should read the same in every market.';
+    } else {
+      text = names + ' ' + verb + 'different text here: “' + shortValue(first.value) + '”.';
+    }
+
+    notes.push({ path, tone, text, region });
+  });
+
+  return notes;
 }
 
 export interface RegionalAssessment {
@@ -1189,39 +1421,36 @@ function regionalAssessment(state: ResumeState, region: RegionProfile, pages: nu
 
   findings.push({ status: 'info', text: `What this market checks: ${rules.checklist.join('; ')}.` });
 
-  /* Sync off means this market keeps its own text; the score and the exports follow the
-     market on screen, and another market may still hold wording the user has not updated. */
+  /* Sync off means this market keeps its own text. Each market is reported for what its
+     own text actually lacks; the fields this market shows carry the same warning under
+     the field itself, in the builder. */
   if (!state.settings.syncRegions) {
-    const behind = staleRegions(state);
-    if (behind.length) {
-      const names = behind.map((id) => REGION_PROFILES[id].label).join(', ');
-      findings.push({
-        status: 'warn',
-        text: `${names} ${behind.length === 1 ? 'holds its' : 'hold their'} own text, which differs from the one on screen. Copy this market's text across in one tap, or switch to ${behind.length === 1 ? 'that market' : 'each of them'} and bring it up to date there.`,
-        action: { label: 'Copy this text across', id: 'sync-copy-all' }
-      });
-    } else {
-      findings.push({
-        status: 'info',
-        text: 'Editing per region is on: this card, the score and every export follow the selected market’s own text.'
-      });
-    }
-
     const lapsed = lapsedRequiredFields(state);
-    if (lapsed.length) {
+    lapsed.forEach((item) => {
+      const label = REGION_PROFILES[item.region].label;
       findings.push({
         status: 'warn',
-        text:
-          lapsed
-            .map(
-              (item) =>
-                `${REGION_PROFILES[item.region].label} needs ${item.fields.join(', ')}, and its text no longer has ${
-                  item.fields.length === 1 ? 'it' : 'them'
-                }`
-            )
-            .join('; ') + ': that copy is a lapsed version, not a preference for less detail.'
+        text: `The ${label} text has no ${item.fields.join(', ')}. ${label} screens for ${
+          item.fields.length === 1 ? 'it' : 'them'
+        } before a first call, so open ${label} and fill ${
+          item.fields.length === 1 ? 'it' : 'them'
+        } in there.`,
+        action: { label: 'Open ' + label, id: 'open-region-' + item.region }
       });
-    }
+    });
+
+    const kept = REGION_IDS.filter(
+      (id) => id !== state.settings.region && Boolean(state.regions && state.regions[id])
+    );
+    findings.push({
+      status: 'info',
+      text:
+        kept.length
+          ? `Editing the ${region.label} text only. ${joinRegionNames(
+              kept.map((id) => REGION_PROFILES[id].label)
+            )} keep ${kept.length === 1 ? 'its own text' : 'their own texts'}, and the builder shows under each field what they say there.`
+          : `Editing the ${region.label} text only. No other market has its own text yet; opening one starts it from what is here.`
+    });
   }
 
   return { score: clamp(Math.round(score)), findings };

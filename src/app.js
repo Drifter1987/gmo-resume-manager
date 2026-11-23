@@ -22,7 +22,8 @@ import {
   METHOD_SOURCES,
   STANDARDS_CAVEAT,
   staleRegions,
-  contentSignature
+  contentSignature,
+  regionFieldNotes
 } from './screening';
 import { complianceIssues } from './compliance';
 import { regionFields, missingRequiredFields, logisticsLine, visiblePhoto } from './fields';
@@ -1482,9 +1483,10 @@ function settingsEditor() {
         <pre class="verify-report" id="verify-report" hidden></pre>
         <span class="setting-note">Runs the whole test suite: every export built and imported back field by
         field, once per market with that market's profile fields, three markets holding their own text and a
-        portrait through JSON, Markdown, TXT and the full backup, eight seeded random resumes checked for
-        fidelity and for a sane screening report, and a table of nationality sentences that must and must not
-        be read as one. A few seconds. Nothing is downloaded or overwritten.</span>
+        portrait through JSON, Markdown, TXT and the full backup, the per-field notes those markets produce,
+        eight seeded random resumes checked for fidelity and for a sane screening report, and a table of
+        nationality sentences that must and must not be read as one. A few seconds. Nothing is downloaded or
+        overwritten.</span>
       </div>
       <div class="paste-row">
         <label class="field-label" for="paste-json">Paste a resume JSON</label>
@@ -1593,7 +1595,10 @@ function decorateEditor() {
   panel.querySelectorAll('.field-flag').forEach((el) => el.remove());
   panel.querySelectorAll('[aria-invalid="true"]').forEach((el) => el.removeAttribute('aria-invalid'));
 
-  if (!regulationsOn()) return;
+  if (!regulationsOn()) {
+    decorateRegionNotes();
+    return;
+  }
 
   const byPath = new Map();
   currentIssues().forEach((issue) => {
@@ -1618,6 +1623,9 @@ function decorateEditor() {
       box.appendChild(note);
     }
   });
+
+  /* Last, so a field the regulations check already explains is not explained twice. */
+  decorateRegionNotes();
 }
 
 function setRegulations(on) {
@@ -1625,6 +1633,54 @@ function setRegulations(on) {
   saveUi();
   decorateEditor();
   applyPreviewMarks();
+}
+
+/**
+ * The per-market notes, under the field each one is about: which other market's own text
+ * differs here, and what that text says. Unlike the regulations flags these are always
+ * shown, because a market holding different wording is a fact about the resume, not a
+ * rule being broken.
+ */
+function decorateRegionNotes() {
+  const panel = document.getElementById('editor-panel');
+  if (!panel) return;
+
+  panel.querySelectorAll('.field-region').forEach((el) => el.remove());
+
+  let notes = [];
+  try {
+    notes = regionFieldNotes(state);
+  } catch (error) {
+    notes = [];
+  }
+
+  notes.forEach((note) => {
+    // The photo control carries no data-path: it is found by its file input.
+    const control =
+      note.path === 'profile.photo'
+        ? panel.querySelector('[data-photo-input]')
+        : panel.querySelector('[data-path="' + note.path + '"]');
+    if (!control) return;
+    const box = control.closest('.field, .check, .switch-row') || control;
+    // A field the regulations check already explains is not explained twice.
+    if (box.querySelector('.field-flag')) return;
+
+    const el = document.createElement('span');
+    el.className = 'field-region is-' + note.tone;
+    el.appendChild(document.createTextNode(note.text));
+
+    if (note.region) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'link-btn';
+      button.dataset.action = 'open-region-' + note.region;
+      button.textContent = 'Open ' + (REGION_LABELS[note.region] || note.region);
+      el.appendChild(document.createTextNode(' '));
+      el.appendChild(button);
+    }
+
+    box.appendChild(el);
+  });
 }
 
 function sectionForPath(path) {
@@ -2265,7 +2321,14 @@ function renderRegionPicker() {
     <p class="region-menu-state">${esc(footState)}</p>
     ${
       others.length
-        ? `<button class="btn btn-sm region-discard" type="button" data-action="sync-discard">Discard other regions’ texts</button>`
+        ? `<div class="region-menu-actions">
+            ${
+              state.settings.syncRegions
+                ? ''
+                : '<button class="btn btn-sm" type="button" data-action="sync-copy-all">Copy this text to every region</button>'
+            }
+            <button class="btn btn-sm" type="button" data-action="sync-discard">Discard other regions’ texts</button>
+          </div>`
         : ''
     }
   </div>`;
@@ -3029,6 +3092,18 @@ async function runVerify() {
 }
 
 function handleAction(action, button) {
+  /* A per-field or per-market note offering to open the market it is about. A note under a
+     field leaves the section alone; one on the Screening card goes to Profile, where the
+     fields that market needs are filled in. */
+  if (action.indexOf('open-region-') === 0) {
+    const id = action.slice('open-region-'.length);
+    if (REGION_IDS.indexOf(id) === -1) return;
+    applySetting('region', id);
+    if (button && button.closest && button.closest('#screen-results')) goTo('profile');
+    toast('Editing the ' + REGION_LABELS[id] + ' text');
+    return;
+  }
+
   if (action === 'remove-photo') {
     state.profile.photo = '';
     state.profile.photoFull = '';
@@ -3247,46 +3322,28 @@ function handleAction(action, button) {
 }
 
 /**
- * What the sync toggle is doing right now, in words, plus a warning for any market whose
- * text has fallen behind. The warning stays until that market is edited or the current
- * text is copied over it, so a stale copy is never silent.
+ * What the sync switch is doing, in one sentence, plus which markets keep a text of
+ * their own. What those texts actually say is shown under the field it differs in, in
+ * the builder, so this block names markets and nothing more.
  */
 function syncNoticeHtml() {
   const active = REGION_LABELS[currentRegion()];
   const others = storedRegions();
-  const discard = others.length
-    ? `<button class="btn btn-sm sync-discard" type="button" data-action="sync-discard">Discard other regions’ texts</button>`
-    : '';
+  const names = others.map((id) => REGION_LABELS[id] || id).join(', ');
 
   if (state.settings.syncRegions) {
-    const kept = others.length
-      ? ` The separate ${others.length === 1 ? 'text' : 'texts'} kept for ${others
-          .map((id) => esc(REGION_LABELS[id] || id))
-          .join(', ')} ${others.length === 1 ? 'is' : 'are'} still stored, and comes back when sync is switched off.`
-      : '';
-    return `<p class="setting-note sync-note">Edits apply everywhere at once: a sentence you delete here is
-    gone from every region's text.${kept}</p>${kept ? discard : ''}`;
+    return `<p class="setting-note sync-note">One text for every region: an edit here reaches all six.${
+      others.length
+        ? ` ${esc(names)} ${others.length === 1 ? 'keeps a separate text' : 'keep separate texts'}, stored and untouched until sync is off again.`
+        : ''
+    }</p>`;
   }
 
-  const behind = divergentRegions();
-  const parts = [`<strong>Sync is off.</strong> You are editing the ${esc(active)} text only.`];
-  if (others.length) {
-    parts.push('Kept separately: ' + others.map((id) => esc(REGION_LABELS[id] || id)).join(', ') + '.');
-  } else {
-    parts.push('No other region has its own text yet; switching to one starts it from what is here.');
-  }
-  if (behind.length) {
-    parts.push(
-      '<span class="sync-warn">' +
-        behind.map((id) => esc(REGION_LABELS[id] || id)).join(', ') +
-        ' ' +
-        (behind.length === 1 ? 'holds its' : 'hold their') +
-        ' own text, which differs from this one — copy this text across, or open that region to edit it.</span>'
-    );
-  }
-  return `<p class="setting-note sync-note">${parts.join(' ')}</p>
-    <button class="btn btn-sm sync-copy" type="button" data-action="sync-copy-all">Copy this text to every region</button>
-    ${discard}`;
+  return `<p class="setting-note sync-note"><strong>Editing the ${esc(active)} text only.</strong> ${
+    others.length
+      ? `${esc(names)} ${others.length === 1 ? 'keeps its own text' : 'keep their own texts'} — each field in the builder says what that market has there.`
+      : 'No other market has its own text yet; opening one starts it from what is here.'
+  }</p>`;
 }
 
 /**
@@ -3482,6 +3539,7 @@ function onPanelInput(event) {
   save();
   renderPreview();
   if (regulationsOn()) decorateEditor();
+  else decorateRegionNotes();
 
   if (target.type === 'checkbox' && path.indexOf('experience.') === 0) {
     const card = target.closest('.card');

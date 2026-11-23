@@ -19,7 +19,7 @@ import { toJson, toMarkdown, toPlainText } from './format';
 import { parseImportBytes } from './parse';
 import { buildPdf } from './pdf';
 import { buildPngPages } from './png';
-import { evaluateResume } from './screening';
+import { evaluateResume, regionFieldNotes } from './screening';
 import { createZip } from './zip';
 import { hasDetail, isNationalityWord, type DetailKind } from './context';
 import type { Profile, RegionContent, RegionId, ResumeState } from './types';
@@ -638,7 +638,24 @@ export async function runRoundTrip(): Promise<TestReport> {
     }
   }
 
-  /* --- 4: the nationality lexicon --- */
+  /* --- 4: the per-field notes that replaced the general region warning --- */
+  const noteProblems: string[] = [];
+  try {
+    const notes = regionFieldNotes(regional);
+    const summary = notes.find((note) => note.path === 'profile.summary');
+    if (!summary) noteProblems.push('no note under the summary, although three markets word it differently');
+    else if (summary.region) noteProblems.push('a note about three markets offers a single market to open');
+    if (notes.some((note) => note.path === 'profile.email')) {
+      noteProblems.push('a note under the email, although every market holds the same address');
+    }
+    const quiet = regionFieldNotes({ ...regional, settings: { ...regional.settings, syncRegions: true } });
+    if (quiet.length) noteProblems.push('notes appear while sync is on');
+  } catch (error) {
+    noteProblems.push(error && (error as Error).message ? (error as Error).message : String(error));
+  }
+  record('per-region · field notes', noteProblems);
+
+  /* --- 5: the nationality lexicon --- */
   const lexiconFailures = lexiconProblems().map((item) => ({ label: item.label, ok: false, problems: item.problems }));
   const lexiconTotal = LEXICON_CASES.length + 6;
   const lexiconPassed = lexiconTotal - lexiconFailures.length;

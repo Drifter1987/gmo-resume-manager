@@ -312,7 +312,7 @@ body {
 
 .region-menu-switch { font-size: 11.5px; }
 .region-menu-state { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
-.region-discard { justify-self: start; }
+.region-menu-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
 :root[data-theme="light"] .region-menu { background: #ffffff; }
 
@@ -2079,16 +2079,6 @@ label.dock-btn { cursor: pointer; user-select: none; }
 .sync-note { margin: 8px 0 0; }
 .sync-note strong { color: var(--ink); }
 
-.sync-warn {
-  display: block;
-  margin-top: 4px;
-  color: var(--gold);
-  font-weight: 600;
-}
-
-.sync-copy { margin-top: 8px; }
-.sync-discard { margin-top: 8px; margin-left: 6px; }
-
 /* ---------- region details in the builder ---------- */
 
 .region-fields {
@@ -2134,6 +2124,34 @@ label.dock-btn { cursor: pointer; user-select: none; }
 
 .field-hint { font-size: 11px; line-height: 1.45; color: var(--muted); }
 .field-warn { color: var(--gold); }
+
+/* ---------- per-market notes, under the field they are about ---------- */
+
+.field-region {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.field-region.is-warn { color: var(--gold); }
+
+.link-btn {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-btn:hover { color: var(--gold); }
+.link-btn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 3px; }
 
 .field.is-required .field-label { color: var(--green); }
 

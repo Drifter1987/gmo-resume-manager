@@ -9,6 +9,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.14.2',
+    name: 'Warnings under the field they are about',
+    summary: 'The per-market warnings left Screening and moved under the field each one concerns: the field, the market, and what that market’s text says there.',
+    notes: [
+      'Every field in the builder now says what the other markets hold in it while per-region editing is on, quoting them: “EMEA has “Senior engineer · Go” here — this field should read the same in every market.”',
+      'A required field another market’s text has lost is stated where it belongs — “GCC needs nationality and its text has none.” — with an Open GCC button under the field itself, instead of a general warning about copying text across regions.',
+      'Factual fields (name, contact details, employers, dates, certificates, the portrait) are marked in amber when another market says something else. Wording that may legitimately differ (summary, headline, bullets, descriptions) is a quiet note quoting what the other market says, not a warning.',
+      'The Screening card no longer carries the copy-across warning at all. It names only what has no field to sit under — a required detail in a market whose fields the current market hides — and offers to open that market.',
+      'The sync block in Screening is one sentence about what the switch is doing and which markets keep a text of their own. Copying this text over every market and discarding the kept texts are now actions in the region menu, not warnings.',
+      'A market whose text has no entry where this one does says so under that entry’s first field, so a role added in one market only is visible at the entry itself.'
+    ]
+  },
+  {
     version: '2.14.1',
     name: 'The switch where the work happens, and a badge that outlives a bad sync',
     summary: 'The region switch reaches the preview header, no market’s text is thrown away by turning sync on, and the nationality list covers territories, diaspora groups and the traps around them.',
