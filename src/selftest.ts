@@ -32,7 +32,7 @@ const TINY_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 function profile(name: string, extra: Partial<Profile> = {}): Profile {
-  return {
+  const base: Profile = {
     name,
     headline: 'Test engineer · colour round trip',
     email: 'test@example.com',
@@ -42,13 +42,14 @@ function profile(name: string, extra: Partial<Profile> = {}): Profile {
     linkedin: 'linkedin.com/in/test-user',
     summary: 'First paragraph with | pipe and an umlaut: äöü — dash.\n\nSecond paragraph after a blank line.',
     photo: '',
+    photoFull: '',
     nationality: '',
     workAuth: '',
     availability: '',
     dateOfBirth: '',
-    maritalStatus: '',
-    ...extra
+    maritalStatus: ''
   };
+  return Object.assign(base, extra);
 }
 
 /** Profile fields the region expects, so each market's builder fields get exercised. */
@@ -356,7 +357,7 @@ function diff(expected: unknown, actual: unknown, path = '', out: string[] = [])
 function flatten(state: ResumeState): ResumeState {
   // Compare everything the writers and parsers must carry, ignoring ids (parsers cannot know them).
   const clean = JSON.parse(JSON.stringify(state)) as ResumeState;
-  const drop = (list: Array<{ id: string }> | undefined) =>
+  const drop = (list: Array<{ id?: string }> | undefined) =>
     (list || []).forEach((item) => {
       delete item.id;
     });
@@ -581,7 +582,10 @@ export async function runRoundTrip(): Promise<TestReport> {
       const bytes = new Uint8Array(await item.blob.arrayBuffer());
       try {
         const imported = await parseImportBytes(item.file, bytes);
-        record(region.toUpperCase() + ' · ' + item.name, diff(flatten(state), flatten(imported.state)));
+        record(
+          region.toUpperCase() + ' · ' + item.name,
+          diff(flatten(state), flatten(imported.state as ResumeState))
+        );
       } catch (error) {
         const message = error && (error as Error).message ? (error as Error).message : String(error);
         record(region.toUpperCase() + ' · ' + item.name, [message]);
@@ -607,7 +611,7 @@ export async function runRoundTrip(): Promise<TestReport> {
       try {
         const bytes = new TextEncoder().encode(writer.text);
         const imported = await parseImportBytes(writer.file, bytes);
-        record(label + ' · ' + writer.name, diff(flatten(state), flatten(imported.state)));
+        record(label + ' · ' + writer.name, diff(flatten(state), flatten(imported.state as ResumeState)));
       } catch (error) {
         const message = error && (error as Error).message ? (error as Error).message : String(error);
         record(label + ' · ' + writer.name, [message]);
@@ -658,7 +662,21 @@ export async function runRoundTrip(): Promise<TestReport> {
   /* --- 5: the portrait in the writers, in a market that expects one --- */
   const portraitProblems: string[] = [];
   try {
-    const withPhoto = sampleState(regionProfile(profile('Portrait Test'), 'gcc', true), 'gcc');
+    /* An opaque square, because a transparent test image would leave the PNG page
+       looking exactly the same and prove nothing. */
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#c0392b';
+      ctx.fillRect(0, 0, 8, 8);
+    }
+
+    const withPhoto = sampleState(regionProfile(profile('Portrait Test'), 'gcc', false), 'gcc');
+    withPhoto.profile.photo = ctx ? canvas.toDataURL('image/png') : TINY_PNG;
+    withPhoto.profile.photoFull = withPhoto.profile.photo;
+
     const without: ResumeState = JSON.parse(JSON.stringify(withPhoto)) as ResumeState;
     without.profile.photo = '';
     without.profile.photoFull = '';
@@ -673,8 +691,16 @@ export async function runRoundTrip(): Promise<TestReport> {
 
     const pngWith = await buildPngPages(withPhoto);
     const pngWithout = await buildPngPages(without);
-    const size = (pages: Blob[]) => pages.reduce((total, page) => total + page.size, 0);
-    if (size(pngWith) <= size(pngWithout)) portraitProblems.push('the PNG does not carry the portrait');
+    if (!pngWith.length || !pngWithout.length) {
+      portraitProblems.push('the PNG writer returned no page');
+    } else {
+      /* Pixels, not size: a page with a portrait on it cannot be the same image. */
+      const withBytes = new Uint8Array(await pngWith[0].arrayBuffer());
+      const bareBytes = new Uint8Array(await pngWithout[0].arrayBuffer());
+      const same =
+        withBytes.length === bareBytes.length && withBytes.every((byte, index) => byte === bareBytes[index]);
+      if (same) portraitProblems.push('the PNG does not carry the portrait');
+    }
 
     /* The portrait must not break the data that rides beside it. */
     const back = await parseImportBytes('portrait.pdf', pdfWith);

@@ -84,7 +84,7 @@ export function buildDocx(state: ResumeState): Blob {
     return `<w:p><w:pPr>${props.join('')}</w:pPr>${runs.map(runXml).join('')}</w:p>`;
   };
 
-  const textParagraph = (text: string, options: ParaOptions & Run = {}): string => {
+  const textParagraph = (text: string, options: ParaOptions & Omit<Run, 'text'> = {}): string => {
     const run: Run = { text, bold: options.bold, italic: options.italic, size: options.size, color: options.color };
     return paragraph([run], options);
   };
