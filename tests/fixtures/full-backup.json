@@ -1,0 +1,157 @@
+{
+  "app": "gmo-resume-manager",
+  "kind": "full-backup",
+  "schema": 2,
+  "version": "2.15.0",
+  "exportedAt": "2026-01-01T00:00:00.000Z",
+  "photo": { "included": false, "quality": "none", "approxKb": 0 },
+  "data": {
+    "profile": {
+      "name": "Ada Fixture",
+      "headline": "Test engineer · colour round trips",
+      "email": "ada@fixture.example",
+      "phone": "+44 20 7946 0321",
+      "location": "London, UK",
+      "website": "ada.example",
+      "linkedin": "linkedin.com/in/ada-fixture",
+      "summary": "US summary text, written for the market on screen.",
+      "photo": "",
+      "photoFull": "",
+      "nationality": "",
+      "workAuth": "",
+      "availability": "",
+      "dateOfBirth": "",
+      "maritalStatus": ""
+    },
+    "experience": [
+      {
+        "id": "e1",
+        "role": "Test engineer",
+        "company": "Northwind Labs",
+        "location": "London, UK",
+        "start": "Oct 2020",
+        "end": "",
+        "current": true,
+        "highlights": "Built the export round-trip suite.\nCut flaky tests by 40%.",
+        "tags": "TypeScript, Playwright"
+      }
+    ],
+    "education": [
+      {
+        "id": "f1",
+        "school": "University of Edinburgh",
+        "degree": "BSc",
+        "field": "Computer Science",
+        "location": "Edinburgh, UK",
+        "start": "2014",
+        "end": "2018",
+        "details": ""
+      }
+    ],
+    "certifications": [
+      {
+        "id": "c1",
+        "name": "ISTQB Certified Tester",
+        "issuer": "ISTQB",
+        "date": "Mar 2024",
+        "expires": "",
+        "link": ""
+      }
+    ],
+    "projects": [
+      {
+        "id": "p1",
+        "name": "Roundtrip",
+        "link": "example.dev/roundtrip",
+        "description": "A small export round-trip harness.",
+        "tech": "TypeScript, Vite"
+      }
+    ],
+    "skills": [{ "id": "s1", "label": "Languages", "items": "TypeScript, SQL" }],
+    "settings": {
+      "theme": "dark",
+      "colorMode": "color",
+      "font": "sans",
+      "density": "comfortable",
+      "showSummary": true,
+      "showTags": true,
+      "target": "",
+      "keywords": "",
+      "region": "us",
+      "syncRegions": false,
+      "sections": {
+        "experience": true,
+        "education": true,
+        "certifications": true,
+        "projects": true,
+        "skills": true
+      }
+    },
+    "regions": {
+      "gcc": {
+        "profile": {
+          "name": "Ada Fixture",
+          "headline": "Test engineer · colour round trips",
+          "email": "ada@fixture.example",
+          "phone": "+44 20 7946 0321",
+          "location": "London, UK",
+          "website": "ada.example",
+          "linkedin": "linkedin.com/in/ada-fixture",
+          "summary": "GCC only summary: nationality and availability matter here.",
+          "photo": "",
+          "photoFull": "",
+          "nationality": "German",
+          "workAuth": "Requires sponsorship",
+          "availability": "From March 2026",
+          "dateOfBirth": "",
+          "maritalStatus": "Single"
+        },
+        "experience": [
+          {
+            "id": "e1",
+            "role": "Test engineer",
+            "company": "Northwind Labs",
+            "location": "London, UK",
+            "start": "Oct 2020",
+            "end": "",
+            "current": true,
+            "highlights": "Built the export round-trip suite.\nCut flaky tests by 40%.",
+            "tags": "TypeScript, Playwright"
+          }
+        ],
+        "education": [
+          {
+            "id": "f1",
+            "school": "University of Edinburgh",
+            "degree": "BSc",
+            "field": "Computer Science",
+            "location": "Edinburgh, UK",
+            "start": "2014",
+            "end": "2018",
+            "details": ""
+          }
+        ],
+        "certifications": [
+          {
+            "id": "c1",
+            "name": "ISTQB Certified Tester",
+            "issuer": "ISTQB",
+            "date": "Mar 2024",
+            "expires": "",
+            "link": ""
+          }
+        ],
+        "projects": [
+          {
+            "id": "p1",
+            "name": "Roundtrip",
+            "link": "example.dev/roundtrip",
+            "description": "A small export round-trip harness.",
+            "tech": "TypeScript, Vite"
+          }
+        ],
+        "skills": [{ "id": "s1", "label": "Languages", "items": "TypeScript, SQL" }]
+      }
+    }
+  }
+}

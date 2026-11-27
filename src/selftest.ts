@@ -655,7 +655,37 @@ export async function runRoundTrip(): Promise<TestReport> {
   }
   record('per-region · field notes', noteProblems);
 
-  /* --- 5: the nationality lexicon --- */
+  /* --- 5: the portrait in the writers, in a market that expects one --- */
+  const portraitProblems: string[] = [];
+  try {
+    const withPhoto = sampleState(regionProfile(profile('Portrait Test'), 'gcc', true), 'gcc');
+    const without: ResumeState = JSON.parse(JSON.stringify(withPhoto)) as ResumeState;
+    without.profile.photo = '';
+    without.profile.photoFull = '';
+
+    const pdfWith = new Uint8Array(await buildPdf(withPhoto).arrayBuffer());
+    const pdfWithout = new Uint8Array(await buildPdf(without).arrayBuffer());
+    if (pdfWith.length <= pdfWithout.length) portraitProblems.push('the PDF does not carry the portrait');
+
+    const docxWith = new Uint8Array(await buildDocx(withPhoto).arrayBuffer());
+    const docxWithout = new Uint8Array(await buildDocx(without).arrayBuffer());
+    if (docxWith.length <= docxWithout.length) portraitProblems.push('the DOCX does not carry the portrait');
+
+    const pngWith = await buildPngPages(withPhoto);
+    const pngWithout = await buildPngPages(without);
+    const size = (pages: Blob[]) => pages.reduce((total, page) => total + page.size, 0);
+    if (size(pngWith) <= size(pngWithout)) portraitProblems.push('the PNG does not carry the portrait');
+
+    /* The portrait must not break the data that rides beside it. */
+    const back = await parseImportBytes('portrait.pdf', pdfWith);
+    diff(flatten(withPhoto), flatten(back.state as ResumeState), 'portrait', portraitProblems);
+    if (without.profile.photo === withPhoto.profile.photo) portraitProblems.push('the test state has no portrait to prove');
+  } catch (error) {
+    portraitProblems.push(error && (error as Error).message ? (error as Error).message : String(error));
+  }
+  record('portrait · PDF, DOCX and PNG', portraitProblems);
+
+  /* --- 6: the nationality lexicon --- */
   const lexiconFailures = lexiconProblems().map((item) => ({ label: item.label, ok: false, problems: item.problems }));
   const lexiconTotal = LEXICON_CASES.length + 6;
   const lexiconPassed = lexiconTotal - lexiconFailures.length;

@@ -754,10 +754,16 @@ function setPath(target, path, value) {
 /* editor                                                               */
 /* -------------------------------------------------------------------- */
 
+/** A stable id for a field, so its label and its notes can point at it. */
+function controlId(path) {
+  return 'f-' + String(path || '').replace(/[^\w-]/g, '-');
+}
+
 function field(label, path, value, placeholder, options) {
   const opts = options || {};
   const classes = opts.span ? 'field ' + opts.span : 'field';
-  const attrs = `data-path="${path}"${opts.disabled ? ' disabled' : ''}`;
+  const inputId = controlId(path);
+  const attrs = `id="${inputId}" data-path="${path}"${opts.disabled ? ' disabled' : ''}`;
 
   let control;
   if (opts.rows) {
@@ -768,7 +774,9 @@ function field(label, path, value, placeholder, options) {
     control = `<input type="${type}" ${attrs} value="${esc(value)}" placeholder="${esc(placeholder || '')}"${autocomplete} />`;
   }
 
-  return `<label class="${classes}"><span class="field-label">${esc(label)}</span>${control}</label>`;
+  /* A label beside the control, not around it: the notes under a field can hold a
+     button of their own, and a button inside a label is not allowed. */
+  return `<div class="${classes}"><label class="field-label" for="${inputId}">${esc(label)}</label>${control}</div>`;
 }
 
 function toolButtons(collection, id, index, total) {
@@ -819,6 +827,7 @@ function requiredTag(spec) {
 
 function regionPhotoControl(spec) {
   const photo = state.profile.photo;
+  const hintId = controlId('profile.photo') + '-hint';
   return `<div class="field span-2 region-photo">
     <span class="field-label">${esc(spec.label)}${requiredTag(spec)}</span>
     <div class="photo-row">
@@ -827,28 +836,32 @@ function regionPhotoControl(spec) {
       }</span>
       <label class="btn btn-sm file-trigger">
         ${photo ? 'Replace photo' : 'Upload photo'}
-        <input type="file" class="file-input" accept="image/*" data-photo-input />
+        <input type="file" class="file-input" accept="image/*" data-photo-input aria-describedby="${hintId}" />
       </label>
       ${photo ? '<button class="btn btn-sm btn-ghost" type="button" data-action="remove-photo">Remove</button>' : ''}
     </div>
-    <span class="field-hint">${esc(spec.hint)}</span>
+    <span class="field-hint" id="${hintId}">${esc(spec.hint)}</span>
   </div>`;
 }
 
 function regionTextField(spec) {
   const value = state.profile[spec.key] || '';
   const unrecognised = spec.key === 'nationality' && value.trim() && !readsAsNationality(value);
-  return `<label class="field${spec.required ? ' is-required' : ''}">
-    <span class="field-label">${esc(spec.label)}${requiredTag(spec)}</span>
-    <input type="text" data-path="profile.${spec.key}" value="${esc(value)}" placeholder="${esc(spec.placeholder)}" />
-    <span class="field-hint">${esc(spec.hint)}</span>
+  const inputId = controlId('profile.' + spec.key);
+  const hintId = inputId + '-hint';
+  return `<div class="field${spec.required ? ' is-required' : ''}">
+    <label class="field-label" for="${inputId}">${esc(spec.label)}${requiredTag(spec)}</label>
+    <input id="${inputId}" type="text" data-path="profile.${spec.key}" aria-describedby="${hintId}" value="${esc(
+      value
+    )}" placeholder="${esc(spec.placeholder)}" />
+    <span class="field-hint" id="${hintId}">${esc(spec.hint)}</span>
     ${
       unrecognised
         ? `<span class="field-hint field-warn">The check does not read this as a nationality. Write it as a country
       or a demonym — Lebanese, Germany — or as “citizen of Lebanon” — so it is not missed.</span>`
         : ''
     }
-  </label>`;
+  </div>`;
 }
 
 function regionFieldsBlock() {
@@ -1540,6 +1553,9 @@ function applyPreviewMarks() {
   resume.querySelectorAll('.is-target, .is-flagged').forEach((el) => {
     el.classList.remove('is-target', 'is-flagged', 'is-flag-fail', 'is-flag-warn');
     el.removeAttribute('title');
+    el.removeAttribute('tabindex');
+    el.removeAttribute('role');
+    el.removeAttribute('aria-label');
   });
 
   if (ui.section === 'screening' && activeAnchor) {
@@ -1560,6 +1576,10 @@ function applyPreviewMarks() {
     el.classList.add('is-flagged', issue.severity === 'fail' ? 'is-flag-fail' : 'is-flag-warn');
     const existing = el.getAttribute('title');
     el.setAttribute('title', existing ? existing + ' ' + issue.text : issue.text);
+    /* A marked line is a control too: reachable by Tab, and it says what it fixes. */
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', 'Fix this field: ' + issue.text);
   });
 
   updateFlagTally(issues);
@@ -1583,6 +1603,29 @@ function updateFlagTally(issues) {
   tally.classList.toggle('is-bad', serious > 0);
 }
 
+/**
+ * Drops the ids this build adds to aria-describedby, so a re-render never leaves a
+ * control pointing at a note that is no longer there. The static field hints keep theirs.
+ */
+function resetDescribedBy(panel) {
+  panel.querySelectorAll('[aria-describedby]').forEach((el) => {
+    const kept = String(el.getAttribute('aria-describedby') || '')
+      .split(/\s+/)
+      .filter((id) => id && !/^(flag|note)-/.test(id));
+    if (kept.length) el.setAttribute('aria-describedby', kept.join(' '));
+    else el.removeAttribute('aria-describedby');
+  });
+}
+
+/** Points a control at its note, keeping the hint it already had. */
+function describeWith(control, id) {
+  const ids = String(control.getAttribute('aria-describedby') || '')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (ids.indexOf(id) === -1) ids.push(id);
+  control.setAttribute('aria-describedby', ids.join(' '));
+}
+
 /** Flags the matching form fields in the editor, with the reason beside the field. */
 function decorateEditor() {
   const panel = document.getElementById('editor-panel');
@@ -1594,6 +1637,7 @@ function decorateEditor() {
   });
   panel.querySelectorAll('.field-flag').forEach((el) => el.remove());
   panel.querySelectorAll('[aria-invalid="true"]').forEach((el) => el.removeAttribute('aria-invalid'));
+  resetDescribedBy(panel);
 
   if (!regulationsOn()) {
     decorateRegionNotes();
@@ -1619,8 +1663,10 @@ function decorateEditor() {
     if (box !== control && box.classList.contains('field')) {
       const note = document.createElement('span');
       note.className = 'field-flag';
+      note.id = 'flag-' + controlId(path);
       note.textContent = messages[0];
       box.appendChild(note);
+      describeWith(control, note.id);
     }
   });
 
@@ -1667,6 +1713,7 @@ function decorateRegionNotes() {
 
     const el = document.createElement('span');
     el.className = 'field-region is-' + note.tone;
+    el.id = 'note-' + controlId(note.path);
     el.appendChild(document.createTextNode(note.text));
 
     if (note.region) {
@@ -1680,6 +1727,7 @@ function decorateRegionNotes() {
     }
 
     box.appendChild(el);
+    describeWith(control, el.id);
   });
 }
 
@@ -1729,7 +1777,7 @@ function screeningHub() {
       preview scrolls to that line and keeps it lit until you leave Screening.</p>
     </div>
 
-    <section class="setting-block">
+    <section class="setting-block is-screen">
       <h3 class="setting-title">Target</h3>
       <div class="form-grid">
         ${field('Role you are applying for', 'settings.target', state.settings.target, 'Senior Test Manager', {
@@ -1743,7 +1791,7 @@ function screeningHub() {
       LLM prompt. The checks re-run as you type.</p>
     </section>
 
-    <section class="setting-block">
+    <section class="setting-block is-screen">
       <h3 class="setting-title">Hiring region</h3>
       <div class="seg seg-wrap" role="group" aria-label="Hiring region">
         ${REGION_IDS.map(
@@ -2541,6 +2589,24 @@ function openRegionGuide(focusId, source) {
 
   document.body.appendChild(sheet);
   document.body.classList.add('guide-open');
+
+  /* The window says it is modal, so Tab stays inside it until it is closed. */
+  sheet.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(
+      sheet.querySelectorAll('button, [href], summary, input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
 
   const card = sheet.querySelector('.guide-card');
   if (card) card.focus({ preventScroll: true });
@@ -3446,6 +3512,12 @@ function goTo(id) {
   requestAnimationFrame(() => {
     if (editor) editor.scrollTop = ui.scrolls[id] || 0;
     if (changed) window.scrollTo(0, 0);
+    /* The panel is announced on the way in, so a section change is not silent. */
+    const panel = document.getElementById('editor-panel');
+    const section = SECTIONS.find((item) => item.id === id);
+    if (!changed || !panel || !section) return;
+    panel.setAttribute('aria-label', section.label + ' fields');
+    panel.focus({ preventScroll: true });
   });
 }
 
@@ -3490,8 +3562,13 @@ function toast(message, isError) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'toast';
+    el.setAttribute('aria-atomic', 'true');
     document.body.appendChild(el);
   }
+  /* A live region, so a phone reader hears the message instead of missing it. An error
+     interrupts; anything else waits its turn. */
+  el.setAttribute('role', isError ? 'alert' : 'status');
+  el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
   el.textContent = message;
   el.className = 'toast is-visible' + (isError ? ' is-error' : '');
   clearTimeout(toastTimer);
@@ -3663,6 +3740,19 @@ function bindEvents() {
 
     if (!regulationsOn()) return;
     if (event.target.closest('a')) return;
+    const flagged = event.target.closest('[data-r-anchor].is-flagged');
+    if (!flagged) return;
+    const anchor = flagged.dataset.rAnchor;
+    const issue = previewIssues.find((item) => item.anchor === anchor && item.path);
+    if (!issue) return;
+    event.preventDefault();
+    focusField(issue.path);
+  });
+
+  /* A marked line is a control: Enter or Space opens the field it is about. */
+  document.getElementById('resume').addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!regulationsOn()) return;
     const flagged = event.target.closest('[data-r-anchor].is-flagged');
     if (!flagged) return;
     const anchor = flagged.dataset.rAnchor;

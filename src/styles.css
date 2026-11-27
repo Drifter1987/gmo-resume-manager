@@ -1577,6 +1577,17 @@ label.dock-btn { cursor: pointer; user-select: none; }
 
 /* ---------- screening ---------- */
 
+/* Three blocks, one surface each: what you target, where you are applying, and what
+   the checks make of it. The headline stays the anchor above them. */
+.setting-block.is-screen {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(6, 16, 11, 0.32);
+}
+
+:root[data-theme="light"] .setting-block.is-screen { background: #f8fbf8; }
+
 .screen-overall {
   display: flex;
   align-items: baseline;
@@ -2125,22 +2136,37 @@ label.dock-btn { cursor: pointer; user-select: none; }
 .field-hint { font-size: 11px; line-height: 1.45; color: var(--muted); }
 .field-warn { color: var(--gold); }
 
-/* ---------- per-market notes, under the field they are about ---------- */
-
+/* ---------- everything under a field reads the same way ---------- */
+/* One size and one rhythm for the three kinds of note under an input; only the
+   colour and the mark say what kind it is: a hint, a rule, or another market. */
+.field-hint,
+.field-flag,
 .field-region {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 11px;
   line-height: 1.45;
-  color: var(--muted);
 }
 
+.field-flag {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.field-flag::before {
+  content: "!";
+  display: inline-block;
+  margin-right: 5px;
+  font-weight: 800;
+}
+
+.field-region { color: var(--muted); }
 .field-region.is-warn { color: var(--gold); }
 
 .link-btn {
   appearance: none;
   border: 0;
-  padding: 0;
+  padding: 3px 0;
   background: none;
   font: inherit;
   font-weight: 700;
@@ -2152,6 +2178,12 @@ label.dock-btn { cursor: pointer; user-select: none; }
 
 .link-btn:hover { color: var(--gold); }
 .link-btn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 3px; }
+
+/* A finger, not a mouse: the small controls grow on a phone. */
+@media (max-width: 640px) {
+  .icon-btn { width: 44px; height: 44px; }
+  .dock-btn { min-height: 44px; }
+}
 
 .field.is-required .field-label { color: var(--green); }
 

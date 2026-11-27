@@ -1,10 +1,14 @@
 import { jsPDF } from 'jspdf';
 import { DATA_MARKER, encodeSnapshot } from './data';
+import { visiblePhoto } from './fields';
 import { hexToRgb, paletteFor } from './palette';
 import type { ResumeState } from './types';
 import { ascii, dateRange, pdfText, splitLines, splitList } from './util';
 
 const MARGIN = 48;
+/** Where the portrait sits in the header, and the smallest column the header text keeps. */
+const PHOTO_BOX = 64;
+const MIN_HEADER = 260;
 
 type RGB = [number, number, number];
 type Style = 'normal' | 'bold' | 'italic' | 'bolditalic';
@@ -28,6 +32,11 @@ export function buildPdf(state: ResumeState): Blob {
   const family = state.settings.font === 'serif' ? 'times' : 'helvetica';
   const K = state.settings.density === 'compact' ? 0.92 : 1;
 
+  /* jsPDF 4.2.1 is the floor on purpose: 4.2.1 is where the last of the reviewed
+     advisories is fixed (HTML injection in the new-window output overloads, and PDF
+     object injection through free-text annotation colour). This writer only uses
+     `addImage`, `text`, `setProperties` and `output('blob')`, none of which are affected,
+     but the dependency itself should not go back below that version. */
   const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -47,12 +56,12 @@ export function buildPdf(state: ResumeState): Blob {
     y = MARGIN;
   };
 
-  const paragraph = (text: string, size: number, style: Style, color: RGB, gap = 2) => {
+  const paragraph = (text: string, size: number, style: Style, color: RGB, gap = 2, width = contentWidth) => {
     const value = pdfText(text);
     if (!value.trim()) return;
     font(style, size);
     doc.setTextColor(color[0], color[1], color[2]);
-    const lines = doc.splitTextToSize(value, contentWidth) as string[];
+    const lines = doc.splitTextToSize(value, width) as string[];
     lines.forEach((line) => {
       ensure(size * K * 1.35);
       doc.text(line, MARGIN, y);
@@ -180,10 +189,38 @@ export function buildPdf(state: ResumeState): Blob {
   const p = state.profile;
   const s = state.settings;
 
+  /* The portrait belongs in the header of the markets that expect one, and the header
+     text is narrowed so nothing ever runs under it. The size comes from the image itself,
+     so a tall or wide portrait keeps its proportions instead of being stretched. */
+  const photo = visiblePhoto(state);
+  let headerWidth = contentWidth;
+  let photoHeight = 0;
+  if (photo) {
+    let w = PHOTO_BOX;
+    let h = PHOTO_BOX;
+    try {
+      const props = doc.getImageProperties(photo);
+      if (props && props.width && props.height) {
+        const scale = PHOTO_BOX / Math.max(props.width, props.height);
+        w = props.width * scale;
+        h = props.height * scale;
+      }
+    } catch (error) {
+      /* A portrait the library cannot measure is still drawn, as a square. */
+    }
+    try {
+      doc.addImage(photo, /^data:image\/jpe?g/i.test(photo) ? 'JPEG' : 'PNG', pageWidth - MARGIN - w, MARGIN, w, h);
+      headerWidth = Math.max(contentWidth - w - 20, MIN_HEADER);
+      photoHeight = h;
+    } catch (error) {
+      headerWidth = contentWidth;
+    }
+  }
+
   if (p.name) {
     font('bold', 22);
     doc.setTextColor(NAME[0], NAME[1], NAME[2]);
-    const nameLines = doc.splitTextToSize(pdfText(p.name), contentWidth) as string[];
+    const nameLines = doc.splitTextToSize(pdfText(p.name), headerWidth) as string[];
     nameLines.forEach((line) => {
       ensure(26 * K);
       doc.text(line, MARGIN, y);
@@ -192,10 +229,13 @@ export function buildPdf(state: ResumeState): Blob {
     y += 2;
   }
 
-  if (p.headline) paragraph(p.headline, 11, 'normal', HEADLINE, 4);
+  if (p.headline) paragraph(p.headline, 11, 'normal', HEADLINE, 4, headerWidth);
 
   const contact = [p.email, p.phone, p.location, p.website, p.linkedin].filter(Boolean).join('  |  ');
-  if (contact) paragraph(contact, 8.5, 'normal', MUTED, 6);
+  if (contact) paragraph(contact, 8.5, 'normal', MUTED, 6, headerWidth);
+
+  /* Below the portrait, so the summary never starts in the space it occupies. */
+  if (photoHeight) y = Math.max(y, MARGIN + photoHeight + 10);
 
   if (s.showSummary && p.summary.trim()) {
     y += 4;

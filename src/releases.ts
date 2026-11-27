@@ -9,6 +9,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.15.0',
+    name: 'The portrait in the exports, and a browser that proves it',
+    summary: 'The profile photo now appears in the PDF, the PNG and the DOCX, jsPDF moves to 4.2.1, the notes under a field are read out with it, and a real browser suite runs in CI.',
+    notes: [
+      'The profile portrait is now drawn into the PDF and the PNG header, at its own proportions, and carried inside the DOCX as a picture part — so a Gulf or APAC CV exports with the photo that market expects, in every format, not only in the live preview.',
+      'jsPDF moves from 2.5.2 to 4.2.1. Every reviewed advisory against the library is fixed only in the 4.x line: the critical HTML injection in the new-window output methods, PDF object injection through annotations and addJS, AcroForm and XMP injection, a path traversal in the Node build, and two denial-of-service fixes. 3.0.4 also fixed a jsPDF and Vite compatibility problem, and the ESM bundle is about 8.5 KB smaller. This app only calls addImage, text, setProperties and output("blob"), none of which are affected.',
+      'Accessibility: a toast is now announced as a live region, every note under a field is linked to its control with aria-describedby (so a reader says it with the field), labels sit beside their controls rather than around them, a section change moves focus to the panel and names it, a line marked by the regulations check is reachable by Tab and opens with Enter, the scoring guide keeps Tab inside itself while it is open, and the small controls grow to a finger on a phone.',
+      'The three things that can sit under a field now read as one: the hint, the rule the regulations check found, and what another market says there share a size, a rhythm and a mark.',
+      'Screening’s Target, Hiring region and results blocks are now three cards rather than loose text under one headline.',
+      'A browser test suite runs in CI before the build: a first load with no console error, importing a full backup, the per-market note and its Open GCC button, the export and import suite, a PDF taken out and read back, and the JSON export keeping every market text. CI also type-checks the project now.',
+      'The published standards were re-checked against their sources, and four claims were corrected: NACE says almost 70% of employers use skills-based hiring, and the unverified “up from 65%” and GPA figures are gone; the EU AI Act date is settled law, not a proposal, because the AI Omnibus entered into force on 27 July 2026 and sets 2 December 2027; the ATS statistics are attributed to the EDLIGO and Jobscan surveys Coversentry compiles; and the Ladders figure is labelled as a small-sample first-glance study, with the 2024 replication noted.',
+      'The 75% auto-rejection myth is now stated with its evidence: it traces to Preptel, which shut down in August 2013, and a 2025 survey of 25 recruiters found 92% of systems rank without auto-rejecting on content.'
+    ]
+  },
+  {
     version: '2.14.2',
     name: 'Warnings under the field they are about',
     summary: 'The per-market warnings left Screening and moved under the field each one concerns: the field, the market, and what that market’s text says there.',

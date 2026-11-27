@@ -1,4 +1,5 @@
 import { DATA_MARKER, encodeSnapshot } from './data';
+import { visiblePhoto } from './fields';
 import { paletteFor } from './palette';
 import { embedPngText } from './pngmeta';
 import type { ResumeState } from './types';
@@ -7,9 +8,22 @@ import { dateRange, splitLines, splitList } from './util';
 const PAGE_W = 1240;
 const PAGE_H = 1754;
 const MARGIN = 96;
+/** Where the portrait sits in the header, and the smallest column the header text keeps. */
+const PHOTO_BOX = 148;
+const MIN_HEADER = 520;
 
 const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
 const SERIF = 'Georgia, "Iowan Old Style", "Times New Roman", serif';
+
+/** Decodes a stored portrait; a picture that cannot be read is simply left out. */
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+}
 
 /**
  * Draws the resume onto A4-sized canvases with the same layout as the PDF writer, and
@@ -232,9 +246,26 @@ export async function buildPngPages(state: ResumeState): Promise<Blob[]> {
   const p = state.profile;
   const s = state.settings;
 
+  /* The portrait goes in the header of the markets that expect one, at its own
+     proportions, and the header text is narrowed so nothing runs under it. */
+  let headerWidth = PAGE_W - MARGIN * 2;
+  let photoHeight = 0;
+  const photo = visiblePhoto(state);
+  if (photo) {
+    const image = await loadImage(photo);
+    if (image && image.width && image.height) {
+      const scale = PHOTO_BOX / Math.max(image.width, image.height);
+      const w = image.width * scale;
+      const h = image.height * scale;
+      ctx.drawImage(image, PAGE_W - MARGIN - w, MARGIN, w, h);
+      headerWidth = Math.max(PAGE_W - MARGIN * 2 - w - 36, MIN_HEADER);
+      photoHeight = h;
+    }
+  }
+
   if (p.name) {
     font(700, 46);
-    const lines = wrap(p.name, PAGE_W - MARGIN * 2);
+    const lines = wrap(p.name, headerWidth);
     for (const line of lines) {
       await ensure(58 * K);
       font(700, 46);
@@ -245,9 +276,12 @@ export async function buildPngPages(state: ResumeState): Promise<Blob[]> {
     y += 4;
   }
 
-  if (p.headline) await paragraph(p.headline, { size: 23, color: pal.headline, gap: 8 });
+  if (p.headline) await paragraph(p.headline, { size: 23, color: pal.headline, gap: 8, width: headerWidth });
   const contact = [p.email, p.phone, p.location, p.website, p.linkedin].filter(Boolean).join('   |   ');
-  if (contact) await paragraph(contact, { size: 18, color: pal.muted, gap: 12 });
+  if (contact) await paragraph(contact, { size: 18, color: pal.muted, gap: 12, width: headerWidth });
+
+  /* Below the portrait, so the summary never starts in the space it occupies. */
+  if (photoHeight) y = Math.max(y, MARGIN + photoHeight + 18);
 
   if (s.showSummary && p.summary.trim()) await paragraph(p.summary.trim(), { size: 20, gap: 10 });
 

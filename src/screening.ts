@@ -63,35 +63,38 @@ export const METHOD_SOURCES: MethodSource[] = [
     publisher: 'Jobscan',
     url: 'https://www.jobscan.co/resume-scanner',
     evidence: 'Vendor guidance',
-    claim: 'Recommends aiming for a keyword match rate of 75% or higher against the posting, and warns against over-stuffing past it.',
+    claim:
+      'Recommends aiming for a match rate of at least 75%, and says plainly that the rate is a Jobscan visualisation, not a score an employer’s ATS assigns.',
     rule: 'The Rubric check passes at 75% coverage, warns from 65%, and fails below that.'
   },
   {
     id: 'atsstats',
     name: 'ATS statistics',
-    publisher: 'Coversentry (2026)',
+    publisher: 'Coversentry (2026), compiling EDLIGO and Jobscan',
     url: 'https://www.coversentry.com/ats-statistics',
     evidence: 'Vendor data',
     claim:
-      'Reports that 23% of rejections come from parsing failures and 43% have nothing to do with qualifications, and that employers rank measurable achievements first at 58.2%, then a tailored resume at 55.3%.',
+      'Compiles EDLIGO’s 2025 analysis of 1,000 rejected resumes — 23% parsing errors, and 43% of rejections unrelated to qualifications — with Jobscan’s 2025 survey of 384 recruiters, where measurable achievements rank first at 58.2% and a tailored resume second at 55.3%.',
     rule: 'ATS parsing and quantified achievements carry the heaviest weight, and the ATS check asks for the job title in the headline.'
   },
   {
     id: 'ladders',
     name: 'Eye-tracking study',
-    publisher: 'Ladders (2018)',
+    publisher: 'Ladders (2018), with a note on the replication',
     url: 'https://www.theladders.com/static/images/basicSite/pdfs/TheLadders-EyeTracking-StudyC2.pdf',
     evidence: 'Industry study',
-    claim: 'Recruiters spend 7.4 seconds on the first screen of a resume, up from six seconds in 2012, and scan the top of the first page.',
-    rule: 'The skim check reads only the headline, the summary and the newest role, because that is all that is read.'
+    claim:
+      'Recruiters give the first screen of a resume about 7.4 seconds, up from six seconds in 2012, and look at the top of the first page first. The sample was small — 30 recruiters — and a 2024 replication (n=114) found longer total reading time while confirming the top-of-page-first pattern.',
+    rule: 'The skim check reads only the headline, the summary and the newest role, because that is the part read first.'
   },
   {
     id: 'sackett',
     name: 'Interview validity',
-    publisher: 'Sackett et al. 2022, Journal of Applied Psychology',
+    publisher: 'Sackett, Zhang, Berry and Lievens (2022), Journal of Applied Psychology 107(11)',
     url: 'https://doi.org/10.1037/apl0000994',
     evidence: 'Peer-reviewed',
-    claim: 'Structured interviews predict job performance at .42 validity against .19 for unstructured ones, the strongest single predictor in the meta-analysis.',
+    claim:
+      'Structured interviews predict job performance at .42 against .19 for unstructured ones, the highest mean validity of any common selection method — with a wide spread, so treat .42 as a mean rather than a fixed value.',
     rule: 'Every role needs at least two evidence-led bullets, so each one can survive STAR probing.'
   },
   {
@@ -118,16 +121,18 @@ export const METHOD_SOURCES: MethodSource[] = [
     publisher: 'NACE Job Outlook 2026',
     url: 'https://www.naceweb.org/research/reports/job-outlook/2026/',
     evidence: 'Industry study',
-    claim: '70% of employers use skills-based hiring for entry-level hires, up from 65%, while GPA screening fell to 42% from 73% in 2019.',
+    claim:
+      'Published in November 2025 for the Class of 2026: almost 70% of employers say they use skills-based hiring, up over the last year, and employers name examples of skills used to solve problems as the best way to show them.',
     rule: 'Skills and demonstrated outcomes outweigh credentials, and education is not weighted above experience.'
   },
   {
     id: 'resumego',
     name: 'Resume length',
-    publisher: 'ResumeGo study, reported by ERE',
+    publisher: 'ResumeGo study, reported by ERE (2019)',
     url: 'https://www.ere.net/articles/one-or-two-page-resumes-best',
     evidence: 'Industry study',
-    claim: 'Recruiters were 2.3 times as likely to prefer a two-page resume, and two-pagers scored 8.6 against 7.1 for one page.',
+    claim:
+      'Recruiters were 2.3 times as likely to prefer a two-page resume. Later surveys point the same way rather than further: criteria’s 2025 report found about 53% of recruiters expect two pages, and another 2025 survey put two pages at 57% against 37% for one — so two pages is a preference, not a rule.',
     rule: 'Two pages is the default ceiling, and the selected market raises it to three where that is the norm.'
   },
   {
@@ -136,7 +141,8 @@ export const METHOD_SOURCES: MethodSource[] = [
     publisher: 'NYC Local Law 144',
     url: 'https://www.nyc.gov/site/dca/about/automated-employment-decision-tools.page',
     evidence: 'Regulation',
-    claim: 'An automated employment decision tool needs an independent bias audit within the past year, a public summary of the results and candidate notice ten business days before use.',
+    claim:
+      'An automated employment decision tool needs an independent bias audit within the past year, a public summary of the results and notice to candidates at least ten business days before use; enforcement began on 5 July 2023.',
     rule: 'The blind-screening view shows what a redacted read looks like, and personal details are judged per market.'
   },
   {
@@ -145,7 +151,8 @@ export const METHOD_SOURCES: MethodSource[] = [
     publisher: 'European Commission',
     url: 'https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai',
     evidence: 'Regulation',
-    claim: 'AI used in recruitment and worker management is classified high-risk; the Commission’s AI Omnibus proposal would apply those obligations from 2 December 2027, so the date is a proposal rather than settled law.',
+    claim:
+      'AI used in recruitment and worker management — CV-sorting software is the Commission’s own example — is high-risk, and those obligations apply from 2 December 2027. The AI Omnibus that set that date entered into force on 27 July 2026, so the date is settled law rather than a proposal.',
     rule: 'Fields that act as proxies for protected traits are flagged in the markets that filter them out.'
   }
 ];
@@ -155,7 +162,8 @@ export const METHOD_SOURCES: MethodSource[] = [
  * repeats a figure the web has quietly retracted.
  */
 export const STANDARDS_CAVEAT =
-  'Two honesty notes. First, the widely repeated claim that 75% of resumes are rejected by an ATS before a human reads them has no published method behind it — it traces to a vendor that no longer exists — and this app does not use it; what it uses is parser behaviour you can verify by reading the live preview. Second, figures marked as vendor data describe one vendor’s own pipeline rather than an audited sample, so they are treated as direction, not proof.';
+  'Two honesty notes, re-checked against the sources in this release. First, the widely repeated claim that 75% of resumes are rejected by an ATS before a human reads them has no published method behind it: it traces to Preptel, a vendor that shut down in August 2013, and a 2025 survey of 25 recruiters found 92% of the systems rank and sort without auto-rejecting on content at all. This app does not use that figure; what it uses is parser behaviour you can check against the live preview. Second, figures marked as vendor data describe one vendor’s own pipeline or a compilation of other vendors’ surveys rather than an audited sample, so they are treated as direction, not proof.';
+
 
 
 

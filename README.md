@@ -32,6 +32,10 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   system share sheet on a phone. PNG export draws one image per A4 page.
 - **Settings** — dark/light theme, resume typeface, density, section visibility, storage usage,
   a data reset, the export panel, the saved-version history, and the release notes and changelog.
+- **Readable and reachable** — a toast is announced as a live region, every note under a field is read
+  out with that field, a section change moves focus to the panel and names it, a line the regulations
+  check marks opens with Enter, the scoring guide keeps focus inside itself while it is open, and the
+  small controls grow to a finger on a phone.
 - **History** — a Save button (or Cmd/Ctrl+S) snapshots the whole resume into the browser:
   up to 40 versions, each with restore, download and delete.
 - **Screening** — a tab that scores the resume against the methods recruiters actually use: ATS
@@ -51,13 +55,17 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   every multiplier, so the headline can be recomputed by hand.
 - **Folding checks** — every check card collapses to its score, name and verdict; anything with a
   warning or a failure opens itself, and Expand all / Collapse all sit above the list.
-- **Published standards** — every check names the source behind it ("Based on: …"), from Jobscan's 75% match
-  target and Coversentry's 2026 ATS statistics to the Ladders eye-tracking study, Sackett et al. 2022 on
-  structured-interview validity, NACE on skills-based hiring, the ResumeGo length study, and NYC Local Law 144
-  with the EU AI Act. The scoring guide lists all ten with what each says, an evidence label — peer-reviewed,
-  government guidance, industry study, vendor guidance, vendor data or regulation — and the rule it set. It also
-  states what the research does not support: the "75% of resumes are rejected by an ATS" claim has no published
-  method and is not used anywhere in the app.
+- **Published standards** — every check names the source behind it ("Based on: …"), from Jobscan's 75%
+  match target and the EDLIGO and Jobscan surveys Coversentry compiles, to the Ladders eye-tracking
+  study, Sackett et al. 2022 on structured-interview validity, NACE Job Outlook 2026 on skills-based
+  hiring, the ResumeGo length study, and NYC Local Law 144 with the EU AI Act. The scoring guide lists
+  them all with what each says, an evidence label — peer-reviewed, government guidance, industry study,
+  vendor guidance, vendor data or regulation — and the rule it set. Their claims were re-checked against
+  the sources in 2.15.0: NACE's figures were corrected, the EU AI Act date is now settled law (the AI
+  Omnibus entered into force on 27 July 2026), and the Ladders and ResumeGo studies are described with
+  the limits of their samples. The guide also states what the research does not support: the "75% of
+  resumes are rejected by an ATS" claim traces to a vendor that shut down in 2013 and is used nowhere in
+  the app.
 - **Region scoring guide** — "How each region is scored", opened from Screening and from Settings, is one
   window with a collapsible section per market: the live score for this resume, an introduction to what
   that market reads for, then each scoring criterion as a subtitle with what it expects, how the app
@@ -110,8 +118,10 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
 | JSON | Full backup: data, order and settings | yes |
 | ZIP | Bundle of several of the above | yes (the first importable file inside) |
 
-Settings → **Resume colour** switches the preview and the PDF, PNG and DOCX exports between colour and
-strict black on white.
+The profile portrait is drawn into the PDF, the PNG and the DOCX header in the markets that expect one
+(GCC, APAC, LATAM and EMEA), at its own proportions; the DOCX carries it as `word/media/portrait.png`
+with its relationship. Settings → **Resume colour** switches the preview and the PDF, PNG and DOCX exports
+between colour and strict black on white.
 
 Files are named `Name_dd.mmm.yyyy-hh.mm.ext` at the moment of export, with `-1`, `-2` suffixes when
 PNG runs to several pages. On iPhone and iPad Download opens the system share sheet — Files, Mail,
@@ -138,17 +148,25 @@ never hold anyone's resume — the data exists only in the browser that entered 
   is unavailable and renders one still frame under reduced motion.
 - The editor and preview renderer are plain JavaScript (`src/app.js`), styled by
   `src/styles.css`. HTML, CSS and JavaScript only — no Python anywhere.
-- jsPDF for PDF output; the DOCX writer builds an OOXML package with a small stored-mode
-  ZIP writer, so there is no server involved.
+- jsPDF 4.2.1 for PDF output — the version floor, because every reviewed advisory against the
+  library is fixed only in the 4.x line; the DOCX writer builds an OOXML package with a small
+  stored-mode ZIP writer, so there is no server involved.
 
 ## Running and deploying
 
 ```
 npm install
-npm run dev      # dev server
-npm run build    # production build into dist/
-npm run preview  # serve the build
+npm run dev        # dev server
+npm run build      # production build into dist/
+npm run preview    # serve the build on 127.0.0.1:4173
+npm run typecheck  # tsc --noEmit
+npm run test:e2e   # Playwright against the built app
 ```
+
+`npm run test:e2e` builds the app, serves it and drives it in Chromium: a first load with no console
+error, importing a full backup, the per-market note under the summary, the export and import suite, a
+PDF taken out and read back, and the JSON export keeping every market text. CI runs the type check and
+the suite before it builds and deploys, so a broken editor or a lost export stops the deploy.
 
 `index.html` at the root forwards to `./dist/`, and the app's page is `src/index.html`. Vite builds
 `src/` into `dist/`; the workflow uploads that build to GitHub Pages and also commits it into the
@@ -173,6 +191,8 @@ overridable with the `BUILD_NUMBER` environment variable).
 - `src/screening.ts` — the screening checks (ATS parse, skim, rubric, achievements, timeline,
   interview, skills, certifications, links, blind view, length) and the LLM prompt builder.
 - `src/styles.css` — theme, layout, editor, resume paper and print styles.
+- `tests/app.spec.ts` and `tests/fixtures/full-backup.json` — the browser suite and its fixture;
+  `playwright.config.ts` builds and serves the app for it.
 
 The print stylesheet is still there, so printing the page from the browser's own menu prints the
 resume alone; the in-app Print button is gone, since PDF export covers it.

@@ -15,7 +15,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Type check
+        run: npm run typecheck
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+      - name: Drive the app in a browser
+        run: npm run test:e2e
+      - name: Keep what a failing run saw
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 7
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

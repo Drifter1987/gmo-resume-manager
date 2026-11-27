@@ -1,4 +1,5 @@
 import { DATA_MARKER, encodeSnapshot } from './data';
+import { visiblePhoto } from './fields';
 import { docxHex, paletteFor } from './palette';
 import type { Palette } from './palette';
 import type { ResumeState } from './types';
@@ -7,6 +8,38 @@ import { createZip, type ZipEntry } from './zip';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const WORD_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const DRAWING_NS = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+const ART_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+const PICTURE_NS = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
+/** One inch in EMU, the unit a DrawingML extent is measured in. */
+const EMU = 914400;
+const PORTRAIT_REL = 'rId1';
+
+/** A data URL's payload as bytes; an empty array when it cannot be decoded. */
+function dataUrlBytes(dataUrl: string): Uint8Array {
+  const payload = String(dataUrl || '').split(',')[1] || '';
+  try {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch (error) {
+    return new Uint8Array();
+  }
+}
+
+/** The pixel size a PNG states in its header, or null for anything else. */
+function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < 24) return null;
+  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
+  const read = (at: number) =>
+    ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0;
+  const width = read(16);
+  const height = read(20);
+  if (!width || !height) return null;
+  return { width, height };
+}
 
 interface Run {
   text: string;
@@ -97,6 +130,22 @@ export function buildDocx(state: ResumeState): Blob {
   const blocks: string[] = [];
   const p = state.profile;
   const s = state.settings;
+
+  /* The portrait in the header of the markets that expect one: an inline DrawingML
+     picture, right-aligned above the name, at its own proportions up to one inch. */
+  const photo = visiblePhoto(state);
+  let portrait: Uint8Array | null = null;
+  if (photo) {
+    const bytes = dataUrlBytes(photo);
+    if (bytes.length) {
+      portrait = bytes;
+      const size = pngSize(bytes) || { width: 1, height: 1 };
+      const scale = EMU / Math.max(size.width, size.height);
+      const cx = Math.max(1, Math.round(size.width * scale));
+      const cy = Math.max(1, Math.round(size.height * scale));
+      blocks.push(`<w:p><w:pPr><w:jc w:val="right"/><w:spacing w:after="60"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="1" name="Portrait"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="${PICTURE_NS}"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="portrait.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${PORTRAIT_REL}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`);
+    }
+  }
 
   if (p.name) blocks.push(textParagraph(p.name, { bold: true, size: 22, after: 40, color: col(pal.name) }));
   if (p.headline) blocks.push(textParagraph(p.headline, { size: 11, color: col(pal.headline), after: 40 }));
@@ -200,10 +249,12 @@ export function buildDocx(state: ResumeState): Blob {
   }
 
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="${WORD_NS}"><w:body>${blocks.join('')}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+<w:document xmlns:w="${WORD_NS}" xmlns:r="${REL_NS}" xmlns:wp="${DRAWING_NS}" xmlns:a="${ART_NS}" xmlns:pic="${PICTURE_NS}"><w:body>${blocks.join('')}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`;
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${
+    portrait ? '<Default Extension="png" ContentType="image/png"/>' : ''
+  }<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`;
 
   const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`;
@@ -219,6 +270,14 @@ export function buildDocx(state: ResumeState): Blob {
     { name: 'word/document.xml', data: encoder.encode(documentXml) },
     { name: 'docProps/core.xml', data: encoder.encode(core) }
   ];
+
+  /* The picture is a part of its own, with the relationship document.xml points at. */
+  if (portrait) {
+    const documentRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="${PORTRAIT_REL}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/portrait.png"/></Relationships>`;
+    files.push({ name: 'word/_rels/document.xml.rels', data: encoder.encode(documentRels) });
+    files.push({ name: 'word/media/portrait.png', data: portrait });
+  }
 
   return new Blob([createZip(files)], { type: DOCX_MIME });
 }
