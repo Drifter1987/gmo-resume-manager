@@ -6,6 +6,17 @@ import { expect, test, type Page } from '@playwright/test';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/full-backup.json', import.meta.url));
 
+/* The app shows its guided tour once on a first visit, which would sit over the
+   controls a test clicks. The tour is marked seen before the first load instead. */
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'gmoResumeManager.ui.v1',
+      JSON.stringify({ section: 'profile', scrolls: {}, tourSeen: true })
+    );
+  });
+});
+
 interface Snapshot {
   data?: {
     profile?: { name?: string };
