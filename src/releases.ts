@@ -9,6 +9,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '2.15.1',
+    name: 'A phone that says what it saved, and a header that fits',
+    summary: 'The save state is now visible on a phone, the issues tally shortens to a count, and the browser suite starts its server reliably in CI.',
+    notes: [
+      'The dock’s status line is hidden on a phone and a tablet, so the Save button carries the state itself: a green dot once everything is saved, an amber dot while there are unsaved changes, and the full status in its label.',
+      'The issues tally in the preview header shortens to “3 issues · 1 serious”, or “All clear”, below 640px, and it rewrites itself when the phone is rotated or the window resized.',
+      'The empty state’s two actions now fill the width on a small phone, so Go to Profile and Load sample data are thumb-sized rather than two small buttons in the middle.',
+      'The browser suite serves the build on 127.0.0.1, so it starts reliably in CI: the first run built the app and then timed out waiting for the preview server.'
+    ]
+  },
+  {
     version: '2.15.0',
     name: 'The portrait in the exports, and a browser that proves it',
     summary: 'The profile photo now appears in the PDF, the PNG and the DOCX, jsPDF moves to 4.2.1, the notes under a field are read out with it, and a real browser suite runs in CI.',

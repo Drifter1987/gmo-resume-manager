@@ -1596,10 +1596,21 @@ function updateFlagTally(issues) {
   }
 
   const serious = issues.filter((issue) => issue.severity === 'fail').length;
-  tally.textContent = issues.length
-    ? issues.length + (issues.length === 1 ? ' field needs attention' : ' fields need attention') +
-      (serious ? ' · ' + serious + ' serious' : '')
-    : 'Every field follows the usual resume rules';
+  const count = issues.length;
+  /* A phone header has room for a count, not a sentence. */
+  const narrow = window.matchMedia('(max-width: 640px)').matches;
+
+  if (!count) {
+    tally.textContent = narrow ? 'All clear' : 'Every field follows the usual resume rules';
+  } else if (narrow) {
+    tally.textContent =
+      count + (count === 1 ? ' issue' : ' issues') + (serious ? ' · ' + serious + ' serious' : '');
+  } else {
+    tally.textContent =
+      count +
+      (count === 1 ? ' field needs attention' : ' fields need attention') +
+      (serious ? ' · ' + serious + ' serious' : '');
+  }
   tally.classList.toggle('is-bad', serious > 0);
 }
 
@@ -3546,6 +3557,14 @@ function hasAnyData() {
 function setStatus(text) {
   const el = document.getElementById('dock-status');
   if (el) el.textContent = text;
+
+  /* On a phone the dock's meta line is hidden, so the Save button carries the state
+     as a dot instead: green when saved, amber while there are unsaved changes. */
+  const save = document.querySelector('[data-dock="save"]');
+  if (!save) return;
+  const label = String(text || '');
+  save.dataset.state = /^unsaved/i.test(label) ? 'unsaved' : 'saved';
+  save.title = 'Save a snapshot (Ctrl or Cmd + S) — ' + label;
 }
 
 function showHint(message) {
@@ -3855,6 +3874,15 @@ function bindEvents() {
       saveUi();
     }
   });
+
+  /* What the header says depends on how much room it has, so a rotation or a resize
+     rewrites the tally and the region badge instead of leaving the long wording. */
+  const narrow = window.matchMedia('(max-width: 640px)');
+  const onNarrow = () => {
+    updateFlagTally(previewIssues);
+    updateRegionBadge();
+  };
+  if (typeof narrow.addEventListener === 'function') narrow.addEventListener('change', onNarrow);
 }
 
 /* -------------------------------------------------------------------- */

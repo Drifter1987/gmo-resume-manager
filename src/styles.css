@@ -1540,6 +1540,19 @@ label.dock-btn { cursor: pointer; user-select: none; }
   .dock-brand,
   .dock-meta { display: none; }
 
+  /* The meta line is hidden here, so the Save button shows the state as a dot. */
+  .dock-btn[data-state="saved"]::after,
+  .dock-btn[data-state="unsaved"]::after {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  .dock-btn[data-state="unsaved"]::after { background: var(--gold); }
+
   .dock-nav { width: 100%; }
   .dock-actions { width: 100%; }
   .dock-actions .dock-btn { flex: 1 1 0; padding: 0 10px; }
@@ -2350,9 +2363,10 @@ label.dock-btn { cursor: pointer; user-select: none; }
   .form-grid { grid-template-columns: 1fr; }
   .r-skill { grid-template-columns: 1fr; gap: 1px; }
   .app { padding: calc(12px + env(safe-area-inset-top, 0px)) 12px 24px; }
-  .preview-head { padding: 9px 11px; }
-  .flag-tally { width: 100%; }
+  .preview-head { padding: 9px 11px; gap: 8px; }
   .format-row { grid-template-columns: 20px 36px minmax(0, 1fr); }
+  /* A thumb, not a cursor: the empty state's two actions fill the width. */
+  .empty-actions { display: grid; gap: 8px; }
 }
 
 /* ---------- desktop shell: two panes that scroll on their own ---------- */

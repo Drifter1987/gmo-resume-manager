@@ -36,6 +36,9 @@ Live: https://drifter1987.github.io/gmo-resume-manager/
   out with that field, a section change moves focus to the panel and names it, a line the regulations
   check marks opens with Enter, the scoring guide keeps focus inside itself while it is open, and the
   small controls grow to a finger on a phone.
+- **Saved state at a glance** — the dock's status line says what is saved; on a phone and a tablet, where
+  that line is hidden, the Save button carries a dot instead: green once saved, amber while there are
+  unsaved changes. The issues tally shortens to a count ("3 issues · 1 serious") on a small screen.
 - **History** — a Save button (or Cmd/Ctrl+S) snapshots the whole resume into the browser:
   up to 40 versions, each with restore, download and delete.
 - **Screening** — a tab that scores the resume against the methods recruiters actually use: ATS

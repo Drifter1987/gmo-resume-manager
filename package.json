@@ -1,13 +1,13 @@
 {
   "name": "gmo-resume-manager",
   "private": true,
-  "version": "2.15.0",
+  "version": "2.15.1",
   "type": "module",
   "description": "GMO Resume Manager — a resume and experience tracker with a WebGL backdrop.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview --port 4173 --strictPort",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"
   },
